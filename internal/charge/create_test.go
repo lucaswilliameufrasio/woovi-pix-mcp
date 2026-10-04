@@ -69,6 +69,7 @@ func TestWooviCreateRejectsMalformedProviderResponse(t *testing.T) {
 		"missing charge":         `{}`,
 		"fractional cent amount": `{"charge":{"identifier":"id","correlationID":"order","status":"ACTIVE","value":12.5}}`,
 		"missing identifier":     `{"charge":{"correlationID":"order","status":"ACTIVE","value":1200}}`,
+		"trailing JSON value":    `{"charge":{"identifier":"id","correlationID":"order","status":"ACTIVE","value":1200}} {"unexpected":true}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) }))

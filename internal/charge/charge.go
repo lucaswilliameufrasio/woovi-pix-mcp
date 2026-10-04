@@ -161,6 +161,10 @@ func decodeCharge(body io.Reader) (Charge, error) {
 	if err := decoder.Decode(&payload); err != nil {
 		return Charge{}, errors.New("provider returned an invalid charge response")
 	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return Charge{}, errors.New("provider returned an invalid charge response")
+	}
 	p := payload.Charge
 	value, err := strconv.ParseInt(string(p.Value), 10, 64)
 	if p.Identifier == "" || p.Status == "" || err != nil || value < 0 {
