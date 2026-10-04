@@ -71,6 +71,8 @@ a seção de configuração acima; use somente referências e valores fictícios
   `correlationID`.
 - O retorno MCP é minimizado a identificador, referência, estado, centavos BRL,
   expiração e código Pix; dados do pagador e payloads brutos são descartados.
+- O cliente aplica limiter local conservador de 10 req/s (sem rajada) para
+  respeitar o limite publicado pela Woovi.
 - Referências: [Autenticação e limites](https://developers.woovi.com/en/docs/apis/api-getting-started),
   [API Redoc](https://developers.woovi.com/en/api-redoc),
   [Correlation ID/idempotência](https://developers.woovi.com/en/docs/concepts/correlation-id).

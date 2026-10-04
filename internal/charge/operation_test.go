@@ -94,6 +94,33 @@ func TestPostgresOperationStoreConcurrentReservationsConverge(t *testing.T) {
 	}
 }
 
+func TestPostgresOperationStoreAppliesMigrationsExactlyOnce(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL is not configured")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	store := NewOperationStore(pool)
+	if err := store.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM pix_charge_schema_migrations WHERE version='0001_init'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one applied versioned migration, got %d", count)
+	}
+}
+
 func TestPostgresOperationStorePreservesUnknownOutcome(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {

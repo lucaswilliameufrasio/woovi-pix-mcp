@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // Charge is the deliberately minimal public view of a Woovi charge.
@@ -42,18 +44,22 @@ type WooviClient struct {
 	baseURL string
 	appID   string
 	http    *http.Client
+	limiter *rate.Limiter
 }
 
 func NewWooviClient(baseURL, appID string, httpClient *http.Client) *WooviClient {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 	}
-	return &WooviClient{baseURL: strings.TrimRight(baseURL, "/"), appID: appID, http: httpClient}
+	return &WooviClient{baseURL: strings.TrimRight(baseURL, "/"), appID: appID, http: httpClient, limiter: rate.NewLimiter(10, 1)}
 }
 
 func (c *WooviClient) GetCharge(ctx context.Context, id string) (Charge, error) {
 	if strings.TrimSpace(id) == "" || len(id) > 256 {
 		return Charge{}, errors.New("invalid charge identifier")
+	}
+	if err := c.limiter.Wait(ctx); err != nil {
+		return Charge{}, errors.New("provider request was cancelled before dispatch")
 	}
 	base, err := url.Parse(c.baseURL)
 	if err != nil || base.Scheme == "" || base.Host == "" {
@@ -92,6 +98,9 @@ type createChargeRequest struct {
 func (c *WooviClient) CreateCharge(ctx context.Context, input CreateChargeRequest) (Charge, error) {
 	if err := ValidateCreateCharge(input); err != nil {
 		return Charge{}, err
+	}
+	if err := c.limiter.Wait(ctx); err != nil {
+		return Charge{}, errors.New("provider request was cancelled before dispatch")
 	}
 	base, err := url.Parse(c.baseURL)
 	if err != nil || base.Scheme == "" || base.Host == "" {

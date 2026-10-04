@@ -4,11 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -16,6 +20,9 @@ import (
 )
 
 var ErrIdempotencyConflict = errors.New("idempotency key was already used with a different request")
+
+//go:embed migrations/*.sql
+var migrationFiles embed.FS
 
 type OperationStatus string
 
@@ -47,31 +54,36 @@ func (s *OperationStore) Migrate(ctx context.Context) error {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('woovi_pix_mcp_schema'))`); err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS pix_charge_operations (
-		id TEXT PRIMARY KEY,
-		tenant_id TEXT NOT NULL,
-		operation TEXT NOT NULL,
-		idempotency_key TEXT NOT NULL,
-		payload_hash TEXT NOT NULL,
-		status TEXT NOT NULL CHECK (status IN ('PENDING','UNKNOWN','COMPLETED','FAILED')),
-		charge JSONB,
-		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-		updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-		UNIQUE (tenant_id, operation, idempotency_key)
-	)`)
+	if _, err := tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS pix_charge_schema_migrations (
+		version TEXT PRIMARY KEY,
+		applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`); err != nil {
+		return err
+	}
+	entries, err := fs.Glob(migrationFiles, "migrations/*.sql")
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS pix_charge_audit (
-		id BIGSERIAL PRIMARY KEY,
-		tenant_id TEXT NOT NULL,
-		operation_id TEXT,
-		tool TEXT NOT NULL,
-		outcome TEXT NOT NULL,
-		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-	)`)
-	if err != nil {
-		return err
+	sort.Strings(entries)
+	for _, path := range entries {
+		version := strings.TrimSuffix(strings.TrimPrefix(path, "migrations/"), ".sql")
+		var applied bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pix_charge_schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {
+			return err
+		}
+		if applied {
+			continue
+		}
+		sql, err := migrationFiles.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, string(sql)); err != nil {
+			return fmt.Errorf("apply schema migration %s: %w", version, err)
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO pix_charge_schema_migrations(version) VALUES($1)`, version); err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }

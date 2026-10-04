@@ -3,6 +3,7 @@ package charge
 import (
 	"context"
 	"encoding/json"
+	"golang.org/x/time/rate"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -56,6 +57,25 @@ func TestWooviClientEscapesChargeReferenceAsOnePathSegment(t *testing.T) {
 	defer server.Close()
 	if _, err := NewWooviClient(server.URL, "test", server.Client()).GetCharge(context.Background(), "order/with#reserved"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWooviClientHonorsCancelledContextBeforeProviderCall(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	client := NewWooviClient(server.URL, "test", server.Client())
+	client.limiter = rate.NewLimiter(0, 0)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := client.GetCharge(ctx, "charge-1"); err == nil {
+		t.Fatal("expected cancelled request")
+	}
+	if called {
+		t.Fatal("provider request was sent after context cancellation")
 	}
 }
 
