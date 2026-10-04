@@ -8,6 +8,23 @@ Stack escolhida para este repo: Go 1.27.1, PostgreSQL 18, pgx v5 e Goose v3
 para migrações SQL. Quando escrita está habilitada, o servidor aplica as
 migrações Goose embutidas ao iniciar.
 
+## Comandos de desenvolvimento
+
+`make help` lista os comandos disponíveis. Exemplos:
+
+```sh
+make db-up
+make migrate-status
+make test
+make check
+make migrate-create name=add_charge_metadata
+```
+
+O banco local usa PostgreSQL 18 e mantém os dados em volume Docker; `make
+db-down` apenas o para. As novas migrations são timestamped e criadas pela
+Goose CLI. Não há target `migrate-down`/`reset`: a migration Down remove as
+tabelas de operação/auditoria e pode apagar evidência de idempotência.
+
 ## Executar
 
 ```sh
