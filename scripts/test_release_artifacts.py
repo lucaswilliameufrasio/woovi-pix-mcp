@@ -84,6 +84,18 @@ class ArchiveTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exactly one archive"):
             verify_target_archive({}, "linux", "arm64")
 
+    def test_rejects_archive_without_license(self):
+        for system in ["linux", "darwin", "windows"]:
+            binary = "woovi-pix-mcp.exe" if system == "windows" else "woovi-pix-mcp"
+            members = [binary, *(name for name in DOCUMENTATION if name != "LICENSE")]
+            artifacts = self.write_archive(system, members)
+
+            with (
+                self.subTest(system=system),
+                self.assertRaisesRegex(ValueError, "missing binary or documentation"),
+            ):
+                verify_target_archive(artifacts, system, "amd64")
+
     def test_rejects_incomplete_archive(self):
         artifacts = self.write_archive("linux", ["README.md"])
 

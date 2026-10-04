@@ -12,6 +12,15 @@ CLI local: setup, perfis, stdio, doctor, instalação segura em clientes JSON e
 Litestream opcional. Transporte remoto, distribuição pública e operações Pix
 Out estão fora do escopo. Validação externa no sandbox Woovi ainda não realizada.
 
+## Licença
+
+Copyright 2026 Lucas Eufrasio e contribuidores.
+Licenciado sob a [Apache License 2.0](LICENSE).
+
+Projeto independente, não oficial da Woovi. A licença cobre o código deste
+repositório, não concede direitos sobre marcas de terceiros e não substitui
+os termos de uso da API Woovi. Dependências mantêm suas próprias licenças.
+
 ## Configurar pela CLI
 
 ```sh

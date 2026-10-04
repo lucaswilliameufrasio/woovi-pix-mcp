@@ -10,8 +10,9 @@ da tag). Este projeto é Go: não usa Cargo, Node ou pnpm para release.
   ou segredos de Woovi para contornar isso.
 - Opcionalmente, proteger o environment `release` com revisão humana e restringir
   branches/tags. O YAML usa esse environment, mas não configura sua proteção.
-- Definir/revisar licença, uso de marca e limitações das plataformas antes de
-  tornar o primeiro draft público. O workflow não escolhe uma licença.
+- O projeto usa Apache License 2.0 (`LICENSE`), incluída nos pacotes. Revisar
+  uso de marca e limitações das plataformas antes de tornar o draft público;
+  o projeto é independente, não oficial da Woovi.
 - Os workflows não usam AppID, conta Woovi ou credenciais de réplica.
 
 ## 1. Preparar a versão
@@ -67,7 +68,7 @@ O draft contém:
 
 - Binário `woovi-pix-mcp` para Linux, macOS e Windows, amd64/arm64.
 - `.tar.gz` para Linux/macOS, `.zip` para Windows e arquivo-fonte `.tar.gz`.
-- `checksums.txt` SHA-256, README, changelog e roteiro sandbox.
+- `checksums.txt` SHA-256, licença Apache 2.0, README, changelog e roteiro sandbox.
 - Versão da tag/commit embutida no CLI (`--version`) e versão no handshake MCP.
 
 Binários usam `CGO_ENABLED=0` e não precisam de Go/PostgreSQL/Docker em runtime.

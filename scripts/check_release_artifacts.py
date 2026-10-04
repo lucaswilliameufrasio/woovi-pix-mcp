@@ -9,7 +9,7 @@ from pathlib import Path
 
 SYSTEMS = ("linux", "darwin", "windows")
 ARCHITECTURES = ("amd64", "arm64")
-DOCUMENTATION = ("README.md", "CHANGELOG.md", "docs/sandbox.md", "docs/releases.md")
+DOCUMENTATION = ("LICENSE", "README.md", "CHANGELOG.md", "docs/sandbox.md", "docs/releases.md")
 
 
 def verify_checksums(root: Path) -> dict[str, Path]:
