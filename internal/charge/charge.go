@@ -59,7 +59,12 @@ func (c *WooviClient) GetCharge(ctx context.Context, id string) (Charge, error) 
 	if err != nil || base.Scheme == "" || base.Host == "" {
 		return Charge{}, errors.New("invalid provider base URL configuration")
 	}
-	base.Path = strings.TrimRight(base.Path, "/") + "/api/v1/charge/" + url.PathEscape(id)
+	escapedPath := strings.TrimRight(base.EscapedPath(), "/") + "/api/v1/charge/" + url.PathEscape(id)
+	base.Path, err = url.PathUnescape(escapedPath)
+	if err != nil {
+		return Charge{}, errors.New("invalid charge identifier")
+	}
+	base.RawPath = escapedPath
 	endpoint := base.String()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {

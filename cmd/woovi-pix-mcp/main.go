@@ -31,7 +31,7 @@ func run(ctx context.Context, getenv func(string) string, logger *log.Logger) er
 	}
 	parsedBase, err := url.Parse(baseURL)
 	localHTTP := parsedBase != nil && parsedBase.Scheme == "http" && (parsedBase.Hostname() == "127.0.0.1" || parsedBase.Hostname() == "localhost")
-	if err != nil || parsedBase == nil || parsedBase.Host == "" || parsedBase.Scheme != "https" && !localHTTP {
+	if err != nil || parsedBase == nil || parsedBase.Host == "" || parsedBase.User != nil || parsedBase.RawQuery != "" || parsedBase.Fragment != "" || strings.Trim(parsedBase.Path, "/") != "" || parsedBase.Scheme != "https" && !localHTTP {
 		return errors.New("WOOVI_API_BASE_URL must use HTTPS (HTTP is allowed only for localhost simulator)")
 	}
 	client := charge.NewWooviClient(baseURL, appID, &http.Client{Timeout: 10 * time.Second})

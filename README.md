@@ -41,6 +41,12 @@ não implementa approval workflow.
 
 ## Simulador local e teste MCP stdio
 
+`examples/mcp-client.json` mostra o formato ilustrativo para clientes que usam
+configuração MCP JSON. Troque o caminho pelo binário local e injete
+`WOOVI_APP_ID` pelo gerenciador de segredos/ambiente do cliente; não copie um
+AppID real para esse arquivo versionado. O placeholder `${WOOVI_APP_ID}` pode
+precisar ser substituído conforme o cliente MCP usado.
+
 O teste de integração sobe o simulador HTTP local e conecta um cliente MCP oficial
 ao binário do servidor:
 
@@ -52,6 +58,10 @@ Para executar o simulador manualmente, rode `go run ./cmd/woovi-simulator`; ele
 escuta apenas em `127.0.0.1:8081` e fornece a cobrança `demo-charge` (AppID
 `simulator`). Configure o servidor com `WOOVI_API_BASE_URL=http://127.0.0.1:8081`
 e `WOOVI_APP_ID=simulator`. HTTP é permitido exclusivamente para localhost.
+
+Exemplo de chamada: “consulte a cobrança `demo-charge`”. Para testar criação,
+suba o simulador e habilite explicitamente escrita com PostgreSQL local conforme
+a seção de configuração acima; use somente referências e valores fictícios.
 
 ## Contrato Woovi verificado
 

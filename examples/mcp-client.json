@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "woovi-pix": {
+      "command": "/absolute/path/to/woovi-pix-mcp",
+      "env": {
+        "WOOVI_API_BASE_URL": "https://api.woovi-sandbox.com",
+        "WOOVI_APP_ID": "${WOOVI_APP_ID}",
+        "WOOVI_ENABLE_CHARGE_CREATION": "false"
+      }
+    }
+  }
+}

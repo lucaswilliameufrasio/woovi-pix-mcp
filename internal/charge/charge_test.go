@@ -46,6 +46,19 @@ func TestWooviClientSanitizesProviderErrors(t *testing.T) {
 	}
 }
 
+func TestWooviClientEscapesChargeReferenceAsOnePathSegment(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.EscapedPath() != "/api/v1/charge/order%2Fwith%23reserved" {
+			t.Fatalf("reference was not escaped as one path segment: %q", r.URL.EscapedPath())
+		}
+		_, _ = w.Write([]byte(`{"charge":{"identifier":"id-1","correlationID":"order/with#reserved","status":"ACTIVE","value":100}}`))
+	}))
+	defer server.Close()
+	if _, err := NewWooviClient(server.URL, "test", server.Client()).GetCharge(context.Background(), "order/with#reserved"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func contains(s, part string) bool {
 	for i := 0; i+len(part) <= len(s); i++ {
 		if s[i:i+len(part)] == part {
