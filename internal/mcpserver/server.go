@@ -147,6 +147,11 @@ func (s *Server) createCharge(ctx context.Context, _ *mcp.CallToolRequest, input
 		_ = s.store.Audit(ctx, s.tenant, operation.ID, "pix_create_charge", "UNKNOWN")
 		return nil, map[string]any{"operation_id": operation.ID, "status": charge.OperationUnknown, "retry_safe": false, "message": "Charge outcome unknown; reconcile by reference before retrying."}, nil
 	}
+	if result.Reference != request.CorrelationID || result.AmountCents != request.AmountCents {
+		_ = s.store.MarkUnknown(ctx, operation.ID)
+		_ = s.store.Audit(ctx, s.tenant, operation.ID, "pix_create_charge", "PROVIDER_RESULT_MISMATCH")
+		return nil, nil, errors.New("provider response does not match the requested charge; operation requires reconciliation")
+	}
 	if err := s.store.Complete(ctx, operation.ID, result); err != nil {
 		_ = s.store.Audit(ctx, s.tenant, operation.ID, "pix_create_charge", "COMPLETE_PERSIST_FAILED")
 		return nil, map[string]any{"operation_id": operation.ID, "status": charge.OperationUnknown, "retry_safe": false, "message": "Provider created the charge but local completion failed; reconcile by reference."}, nil

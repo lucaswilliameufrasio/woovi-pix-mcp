@@ -182,3 +182,65 @@ func TestStdioClientReconcilesProviderCreatedChargeAfterLostResponse(t *testing.
 		t.Fatalf("expected reconciled outcome: %+v", reconciled)
 	}
 }
+
+func TestProviderResponseMismatchIsNeverMarkedCompleted(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL is not configured")
+	}
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "simulator" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if r.Method == http.MethodPost {
+			_, _ = w.Write([]byte(`{"charge":{"identifier":"wrong-charge","correlationID":"other-reference","status":"ACTIVE","value":9999}}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer provider.Close()
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	store := charge.NewOperationStore(pool)
+	if err := store.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	tenant := "mismatch-" + time.Now().Format("150405.000000000")
+	api := charge.NewWooviClient(provider.URL, "simulator", provider.Client())
+	server, err := NewWithWrites(api, api, store, tenant, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverSession, err := server.MCP().Connect(context.Background(), serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = serverSession.Close() }()
+	client := mcp.NewClient(&mcp.Implementation{Name: "mismatch-test-client", Version: "1.0.0"}, nil)
+	session, err := client.Connect(context.Background(), clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+	request := charge.CreateChargeRequest{CorrelationID: "wanted-reference", AmountCents: 2000, ExpiresInSeconds: 1800}
+	hash, err := charge.RequestHash(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "pix_create_charge", Arguments: map[string]any{"reference": request.CorrelationID, "amount_cents": float64(request.AmountCents), "expires_in_seconds": float64(request.ExpiresInSeconds)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.IsError {
+		t.Fatalf("provider mismatch must not return success: %+v", result)
+	}
+	operation, created, err := store.Reserve(context.Background(), tenant, "pix_create_charge", request.CorrelationID, hash)
+	if err != nil || created || operation.Status != charge.OperationUnknown {
+		t.Fatalf("mismatched PSP response must remain UNKNOWN: %+v %v %v", operation, created, err)
+	}
+}
