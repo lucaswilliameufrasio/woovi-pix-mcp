@@ -41,3 +41,7 @@ jobs:
         run: go test -race -count=1 ./...
       - name: Build
         run: go build ./...
+      - name: Lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.14.0
