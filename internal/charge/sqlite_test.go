@@ -125,3 +125,41 @@ func TestSQLiteRejectsUnsafePaths(t *testing.T) {
 		t.Fatal("accepted public file")
 	}
 }
+
+func TestSQLitePendingAndUnknownSurviveRestart(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "operations.db")
+	s, err := OpenSQLiteStore(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, _, err := s.Reserve(ctx, "account", "create", "pending-key", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown, _, err := s.Reserve(ctx, "account", "create", "unknown-key", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkUnknown(ctx, unknown.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = OpenSQLiteStore(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	for key, want := range map[string]Operation{"pending-key": first, "unknown-key": {ID: unknown.ID, Status: OperationUnknown}} {
+		got, created, err := s.Reserve(ctx, "account", "create", key, "hash")
+		if err != nil || created || got.ID != want.ID || got.Status != want.Status {
+			t.Fatalf("restart %s: %+v %v %v", key, got, created, err)
+		}
+	}
+	var count int
+	if err := s.db.QueryRow("SELECT count(*) FROM goose_db_version WHERE version_id=20261004183729 AND is_applied").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("migration repeated: %d %v", count, err)
+	}
+}

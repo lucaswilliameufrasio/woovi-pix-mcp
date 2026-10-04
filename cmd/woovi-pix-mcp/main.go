@@ -20,7 +20,7 @@ import (
 
 func main() {
 	logger := log.New(os.Stderr, "woovi-pix-mcp: ", log.LstdFlags)
-	if err := run(context.Background(), os.Getenv, logger); err != nil {
+	if err := cli(context.Background(), os.Args[1:], os.Stdin, os.Stdout, logger); err != nil {
 		logger.Print(err)
 		os.Exit(1)
 	}
@@ -44,9 +44,6 @@ func run(ctx context.Context, getenv func(string) string, logger *log.Logger) er
 		tenant := strings.TrimSpace(getenv("WOOVI_ACCOUNT_ID"))
 		if tenant == "" {
 			return errors.New("WOOVI_ACCOUNT_ID is required when charge creation is enabled")
-		}
-		if strings.TrimSpace(getenv("DATABASE_URL")) != "" {
-			return errors.New("legacy PostgreSQL configuration detected; import existing state before switching to SQLite")
 		}
 		path := strings.TrimSpace(getenv("WOOVI_DATABASE_PATH"))
 		if path == "" {

@@ -11,22 +11,6 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-24.04
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_USER: woovi
-          POSTGRES_PASSWORD: woovi-local-test
-          POSTGRES_DB: woovi_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U woovi -d woovi_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      TEST_DATABASE_URL: postgres://woovi:woovi-local-test@localhost:5432/woovi_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -35,9 +19,9 @@ jobs:
           cache: true
       - name: Verify formatting
         run: test -z "$(gofmt -l .)"
-      - name: Test with PostgreSQL
+      - name: Test with file-backed SQLite
         run: go test -count=1 ./...
-      - name: Race test with PostgreSQL
+      - name: Race test with file-backed SQLite
         run: go test -race -count=1 ./...
       - name: Build
         run: go build ./...

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lucaseufrasio/woovi-pix-mcp/internal/charge"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -44,23 +43,6 @@ func NewWithWrites(client charge.Client, creator charge.ChargeCreator, store cha
 	}
 	server.creator, server.store, server.tenant, server.writeEnabled = creator, store, tenant, enabled
 	return server, nil
-}
-
-func OpenOperationStore(ctx context.Context, databaseURL string) (*pgxpool.Pool, *charge.OperationStore, error) {
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		return nil, nil, errors.New("invalid database configuration")
-	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, nil, errors.New("database is unavailable")
-	}
-	store := charge.NewOperationStore(pool)
-	if err := store.Migrate(ctx); err != nil {
-		pool.Close()
-		return nil, nil, errors.New("unable to initialize operation store")
-	}
-	return pool, store, nil
 }
 
 func (s *Server) MCP() *mcp.Server {

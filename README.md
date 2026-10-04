@@ -6,26 +6,43 @@ Out, transferências, reembolsos ou cancelamentos financeiros.
 
 Stack: Go 1.27.1, MCP Go SDK v1.8.0, SQLite embutido e Goose v3 para migrações
 SQL. Quando escrita está habilitada, o servidor cria o banco privado e aplica
-as migrações ao iniciar. PostgreSQL é legado; seus dados não são apagados.
+as migrações ao iniciar. Não requer PostgreSQL nem Docker.
 
-A revisão de UX está em andamento: setup/perfis pela CLI, instalação nos
-clientes, doctor e Litestream opcional ainda não estão disponíveis. As variáveis
-abaixo são a interface transitória, não o onboarding final.
+A revisão de UX está em andamento: setup, perfis, stdio e doctor já estão
+disponíveis. Instalação automática nos clientes e Litestream ainda pendentes.
+
+## Configurar pela CLI
+
+```sh
+go build -o ./bin/woovi-pix-mcp ./cmd/woovi-pix-mcp
+./bin/woovi-pix-mcp setup --profile sandbox
+./bin/woovi-pix-mcp doctor --profile sandbox
+```
+
+O assistente pede ambiente, identificador estável da conta e opt-in de criação.
+O AppID é digitado sem eco e salvo no cofre de credenciais do sistema. Se o
+cofre não estiver disponível, o setup falha: não há fallback silencioso. Use
+`setup --profile sandbox --secret-file` somente se aceitar guardar o segredo
+sem criptografia em arquivo restrito ao usuário. Permissões POSIX são validadas;
+ACLs Windows ainda precisam validação antes de recomendar esse fallback lá.
+Perfis existentes não são sobrescritos: use outro nome para nova configuração.
+
+Configure seu cliente com o caminho absoluto do binário e argumentos
+`["stdio", "--profile", "sandbox"]`. Não inclua AppID na configuração do cliente.
+`doctor` é diagnóstico local; não chama Woovi nem cria cobrança.
 
 ## Comandos de desenvolvimento
 
 `make help` lista os comandos disponíveis. Exemplos:
 
 ```sh
-make db-up
-make migrate-status
 make test
 make check
 make migrate-create name=add_charge_metadata
 ```
 
-O banco local usa PostgreSQL 18 e mantém os dados em volume Docker; `make
-db-down` apenas o para. As novas migrations são timestamped e criadas pela
+Os testes usam arquivos SQLite reais temporários, inclusive processos separados.
+As novas migrations são timestamped e criadas pela
 Goose CLI. Não há target `migrate-down`/`reset`: a migration Down remove as
 tabelas de operação/auditoria e pode apagar evidência de idempotência.
 
@@ -77,8 +94,7 @@ O arquivo SQLite é criado sob o diretório de configuração do usuário, em
 `WOOVI_DATABASE_PATH` permite indicar outro arquivo privado. Nunca apague o
 arquivo para resolver um erro: ele guarda a evidência das tentativas anteriores.
 SQLite usa WAL, synchronous FULL e espera limitada para escritores concorrentes.
-Se `DATABASE_URL` estiver definido, a inicialização de escrita é bloqueada até
-que a importação explícita do histórico legado seja implementada e executada.
+Não há DATABASE_URL nem importação PostgreSQL; esse MCP não teve usuários legados.
 
 ## Simulador local e teste MCP stdio
 
@@ -121,9 +137,5 @@ a seção de configuração acima; use somente referências e valores fictícios
 O simulador de teste também suporta POST e mantém cobranças idempotentes pela
 referência em memória; nunca use credencial ou host de produção nos testes.
 
-Com PostgreSQL local, os testes de persistência reais são ativados por:
-
-```sh
-TEST_DATABASE_URL='postgres://woovi:woovi-local-test@127.0.0.1:55463/woovi_test?sslmode=disable' \
-go test -count=1 ./...
-```
+Todos os testes de persistência SQLite executam automaticamente em `make test`,
+sem credenciais ou infraestrutura externa.
