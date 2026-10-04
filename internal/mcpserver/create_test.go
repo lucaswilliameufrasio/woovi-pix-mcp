@@ -251,3 +251,61 @@ func TestProviderResponseMismatchIsNeverMarkedCompleted(t *testing.T) {
 		t.Fatalf("mismatched PSP response must remain UNKNOWN: %+v %v %v", operation, created, err)
 	}
 }
+
+func TestFailedPostWithMismatchedLookupRemainsUnknown(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL is not configured")
+	}
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			http.Error(w, "temporary provider failure", http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(`{"charge":{"identifier":"unrelated-charge","correlationID":"another-order","status":"ACTIVE","value":9999}}`))
+	}))
+	defer provider.Close()
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	store := charge.NewOperationStore(pool)
+	if err := store.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	tenant := "lookup-mismatch-" + time.Now().Format("150405.000000000")
+	api := charge.NewWooviClient(provider.URL, "simulator", provider.Client())
+	server, err := NewWithWrites(api, api, store, tenant, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverSession, err := server.MCP().Connect(context.Background(), serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = serverSession.Close() }()
+	client := mcp.NewClient(&mcp.Implementation{Name: "lookup-mismatch-test", Version: "1.0.0"}, nil)
+	session, err := client.Connect(context.Background(), clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+	request := charge.CreateChargeRequest{CorrelationID: "wanted-order", AmountCents: 2000, ExpiresInSeconds: 1800}
+	hash, err := charge.RequestHash(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "pix_create_charge", Arguments: map[string]any{"reference": request.CorrelationID, "amount_cents": float64(request.AmountCents), "expires_in_seconds": float64(request.ExpiresInSeconds)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.IsError {
+		t.Fatalf("mismatched lookup must not report success: %+v", result)
+	}
+	operation, created, err := store.Reserve(context.Background(), tenant, "pix_create_charge", request.CorrelationID, hash)
+	if err != nil || created || operation.Status != charge.OperationUnknown {
+		t.Fatalf("operation should remain UNKNOWN after mismatched lookup: %+v created=%v err=%v", operation, created, err)
+	}
+}

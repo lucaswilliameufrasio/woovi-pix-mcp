@@ -118,6 +118,7 @@ func (s *Server) createCharge(ctx context.Context, _ *mcp.CallToolRequest, input
 				return nil, map[string]any{"operation_id": operation.ID, "status": charge.OperationUnknown, "retry_safe": false, "message": "Charge remains unresolved; reconcile by reference before retrying."}, nil
 			}
 			if reconciled.Reference != request.CorrelationID || reconciled.AmountCents != request.AmountCents {
+				_ = s.store.Audit(ctx, s.tenant, operation.ID, "pix_create_charge", "RECONCILE_MISMATCH")
 				return nil, nil, errors.New("provider charge does not match the pending request")
 			}
 			if reconcileErr := s.store.Reconcile(ctx, operation.ID, reconciled); reconcileErr != nil {
@@ -138,7 +139,11 @@ func (s *Server) createCharge(ctx context.Context, _ *mcp.CallToolRequest, input
 			return nil, nil, errors.New("charge outcome unknown and operation persistence failed; reconcile by reference")
 		}
 		reconciled, lookupErr := s.client.GetCharge(ctx, request.CorrelationID)
-		if lookupErr == nil && reconciled.Reference == request.CorrelationID && reconciled.AmountCents == request.AmountCents {
+		if lookupErr == nil {
+			if reconciled.Reference != request.CorrelationID || reconciled.AmountCents != request.AmountCents {
+				_ = s.store.Audit(ctx, s.tenant, operation.ID, "pix_create_charge", "RECONCILE_MISMATCH")
+				return nil, nil, errors.New("provider charge does not match the pending request; operation remains unresolved")
+			}
 			if reconcileErr := s.store.Reconcile(ctx, operation.ID, reconciled); reconcileErr == nil {
 				_ = s.store.Audit(ctx, s.tenant, operation.ID, "pix_create_charge", "RECONCILED")
 				return nil, map[string]any{"charge": reconciled, "replayed": false, "reconciled": true}, nil
