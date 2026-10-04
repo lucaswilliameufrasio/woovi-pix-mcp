@@ -2,36 +2,28 @@ package mcpserver
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lucaseufrasio/woovi-pix-mcp/internal/charge"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestStdioClientCanCreateIdempotentChargeWithOptInAndPostgres(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL is not configured")
-	}
+func TestStdioClientCanCreateIdempotentChargeWithOptInAndSQLite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "operations.db")
 	provider := httptest.NewServer(charge.NewWooviSimulatorWithCreate())
 	defer provider.Close()
-	pool, err := pgxpool.New(context.Background(), dsn)
+	pool, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
-	store := charge.NewOperationStore(pool)
-	if err := store.Migrate(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	defer func() { _ = pool.Close() }()
 
 	binary := filepath.Join(t.TempDir(), "woovi-pix-mcp")
 	build := exec.Command("go", "build", "-o", binary, "../../cmd/woovi-pix-mcp")
@@ -39,7 +31,7 @@ func TestStdioClientCanCreateIdempotentChargeWithOptInAndPostgres(t *testing.T) 
 		t.Fatalf("build MCP server: %v\n%s", err, output)
 	}
 	command := exec.Command(binary)
-	command.Env = append(command.Environ(), "WOOVI_API_BASE_URL="+provider.URL, "WOOVI_APP_ID=simulator", "WOOVI_ENABLE_CHARGE_CREATION=true", "DATABASE_URL="+dsn, "WOOVI_ACCOUNT_ID=mcp-test-account")
+	command.Env = append(command.Environ(), "WOOVI_API_BASE_URL="+provider.URL, "WOOVI_APP_ID=simulator", "WOOVI_ENABLE_CHARGE_CREATION=true", "DATABASE_URL=", "WOOVI_DATABASE_PATH="+path, "WOOVI_ACCOUNT_ID=mcp-test-account")
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "1.0.0"}, nil)
 	session, err := client.Connect(context.Background(), &mcp.CommandTransport{Command: command}, nil)
 	if err != nil {
@@ -74,7 +66,7 @@ func TestStdioClientCanCreateIdempotentChargeWithOptInAndPostgres(t *testing.T) 
 		t.Fatalf("expected replay of stored charge: %+v", secondResult)
 	}
 	var auditCount int
-	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM pix_charge_audit WHERE tenant_id='mcp-test-account' AND tool='pix_create_charge'`).Scan(&auditCount); err != nil {
+	if err := pool.QueryRowContext(context.Background(), `SELECT count(*) FROM pix_charge_audit WHERE tenant_id='mcp-test-account' AND tool='pix_create_charge'`).Scan(&auditCount); err != nil {
 		t.Fatal(err)
 	}
 	if auditCount < 2 {
@@ -117,10 +109,7 @@ func TestStdioClientDoesNotAdvertiseCreationByDefault(t *testing.T) {
 }
 
 func TestStdioClientReconcilesProviderCreatedChargeAfterLostResponse(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL is not configured")
-	}
+	path := filepath.Join(t.TempDir(), "operations.db")
 	createdOnce := atomic.Bool{}
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "simulator" {
@@ -144,15 +133,11 @@ func TestStdioClientReconcilesProviderCreatedChargeAfterLostResponse(t *testing.
 	if lookupErr != nil || lookup.ID != "after-timeout" {
 		t.Fatalf("lookup should find the already-created provider charge: %+v %v", lookup, lookupErr)
 	}
-	pool, err := pgxpool.New(context.Background(), dsn)
+	store, err := charge.OpenSQLiteStore(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
-	store := charge.NewOperationStore(pool)
-	if err := store.Migrate(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	defer func() { _ = store.Close() }()
 	request := charge.CreateChargeRequest{CorrelationID: "mcp-unknown-001", AmountCents: 3500, ExpiresInSeconds: 1800}
 	hash, err := charge.RequestHash(request)
 	if err != nil {
@@ -173,7 +158,7 @@ func TestStdioClientReconcilesProviderCreatedChargeAfterLostResponse(t *testing.
 		t.Fatalf("build MCP server: %v\n%s", err, output)
 	}
 	command := exec.Command(binary)
-	command.Env = append(command.Environ(), "WOOVI_API_BASE_URL="+provider.URL, "WOOVI_APP_ID=simulator", "WOOVI_ENABLE_CHARGE_CREATION=true", "DATABASE_URL="+dsn, "WOOVI_ACCOUNT_ID="+tenant)
+	command.Env = append(command.Environ(), "WOOVI_API_BASE_URL="+provider.URL, "WOOVI_APP_ID=simulator", "WOOVI_ENABLE_CHARGE_CREATION=true", "DATABASE_URL=", "WOOVI_DATABASE_PATH="+path, "WOOVI_ACCOUNT_ID="+tenant)
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "1.0.0"}, nil)
 	session, err := client.Connect(context.Background(), &mcp.CommandTransport{Command: command}, nil)
 	if err != nil {
@@ -191,10 +176,6 @@ func TestStdioClientReconcilesProviderCreatedChargeAfterLostResponse(t *testing.
 }
 
 func TestProviderResponseMismatchIsNeverMarkedCompleted(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL is not configured")
-	}
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "simulator" {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -207,15 +188,11 @@ func TestProviderResponseMismatchIsNeverMarkedCompleted(t *testing.T) {
 		http.NotFound(w, r)
 	}))
 	defer provider.Close()
-	pool, err := pgxpool.New(context.Background(), dsn)
+	store, err := charge.OpenSQLiteStore(context.Background(), filepath.Join(t.TempDir(), "operations.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
-	store := charge.NewOperationStore(pool)
-	if err := store.Migrate(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	defer func() { _ = store.Close() }()
 	tenant := "mismatch-" + time.Now().Format("150405.000000000")
 	api := charge.NewWooviClient(provider.URL, "simulator", provider.Client())
 	server, err := NewWithWrites(api, api, store, tenant, true)
@@ -253,10 +230,6 @@ func TestProviderResponseMismatchIsNeverMarkedCompleted(t *testing.T) {
 }
 
 func TestFailedPostWithMismatchedLookupRemainsUnknown(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL is not configured")
-	}
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			http.Error(w, "temporary provider failure", http.StatusInternalServerError)
@@ -265,15 +238,11 @@ func TestFailedPostWithMismatchedLookupRemainsUnknown(t *testing.T) {
 		_, _ = w.Write([]byte(`{"charge":{"identifier":"unrelated-charge","correlationID":"another-order","status":"ACTIVE","value":9999}}`))
 	}))
 	defer provider.Close()
-	pool, err := pgxpool.New(context.Background(), dsn)
+	store, err := charge.OpenSQLiteStore(context.Background(), filepath.Join(t.TempDir(), "operations.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
-	store := charge.NewOperationStore(pool)
-	if err := store.Migrate(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	defer func() { _ = store.Close() }()
 	tenant := "lookup-mismatch-" + time.Now().Format("150405.000000000")
 	api := charge.NewWooviClient(provider.URL, "simulator", provider.Client())
 	server, err := NewWithWrites(api, api, store, tenant, true)

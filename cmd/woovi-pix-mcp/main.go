@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -38,16 +41,27 @@ func run(ctx context.Context, getenv func(string) string, logger *log.Logger) er
 	writeEnabled := strings.EqualFold(strings.TrimSpace(getenv("WOOVI_ENABLE_CHARGE_CREATION")), "true")
 	var server *mcpserver.Server
 	if writeEnabled {
-		databaseURL := strings.TrimSpace(getenv("DATABASE_URL"))
 		tenant := strings.TrimSpace(getenv("WOOVI_ACCOUNT_ID"))
-		if databaseURL == "" || tenant == "" {
-			return errors.New("DATABASE_URL and WOOVI_ACCOUNT_ID are required when charge creation is enabled")
+		if tenant == "" {
+			return errors.New("WOOVI_ACCOUNT_ID is required when charge creation is enabled")
 		}
-		database, store, err := mcpserver.OpenOperationStore(ctx, databaseURL)
+		if strings.TrimSpace(getenv("DATABASE_URL")) != "" {
+			return errors.New("legacy PostgreSQL configuration detected; import existing state before switching to SQLite")
+		}
+		path := strings.TrimSpace(getenv("WOOVI_DATABASE_PATH"))
+		if path == "" {
+			root, err := os.UserConfigDir()
+			if err != nil {
+				return errors.New("unable to locate local data directory")
+			}
+			scope := sha256.Sum256([]byte(baseURL + "\x00" + tenant))
+			path = filepath.Join(root, "woovi-pix-mcp", "state", hex.EncodeToString(scope[:]), "operations.db")
+		}
+		store, err := charge.OpenSQLiteStore(ctx, path)
 		if err != nil {
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = store.Close() }()
 		configuredServer, serverErr := mcpserver.NewWithWrites(client, client, store, tenant, true)
 		if serverErr != nil {
 			return errors.New("unable to initialize MCP server")

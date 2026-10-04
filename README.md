@@ -4,9 +4,13 @@ Servidor MCP local em Go para consultar e, opcionalmente, criar cobranças Pix
 Woovi. A ferramenta `pix_create_charge` fica desativada por padrão. Não há Pix
 Out, transferências, reembolsos ou cancelamentos financeiros.
 
-Stack escolhida para este repo: Go 1.27.1, PostgreSQL 18, pgx v5 e Goose v3
-para migrações SQL. Quando escrita está habilitada, o servidor aplica as
-migrações Goose embutidas ao iniciar.
+Stack: Go 1.27.1, MCP Go SDK v1.8.0, SQLite embutido e Goose v3 para migrações
+SQL. Quando escrita está habilitada, o servidor cria o banco privado e aplica
+as migrações ao iniciar. PostgreSQL é legado; seus dados não são apagados.
+
+A revisão de UX está em andamento: setup/perfis pela CLI, instalação nos
+clientes, doctor e Litestream opcional ainda não estão disponíveis. As variáveis
+abaixo são a interface transitória, não o onboarding final.
 
 ## Comandos de desenvolvimento
 
@@ -47,15 +51,14 @@ operacionais vão para stderr; stdout fica reservado ao protocolo stdio. O host
 Woovi de produção é `https://api.woovi.com`, mas o servidor aceita apenas HTTPS
 para hosts remotos.
 
-Criação é uma capacidade explicitamente opt-in. Requer PostgreSQL, identificador
-fixo da conta autorizada e limite máximo de R$ 100.000 por cobrança:
+Criação é uma capacidade explicitamente opt-in. Requer identificador fixo da
+conta autorizada e limite máximo de R$ 100.000 por cobrança, sem banco externo:
 
 ```sh
 WOOVI_API_BASE_URL=https://api.woovi-sandbox.com \
 WOOVI_APP_ID='<AppID de sandbox>' \
 WOOVI_ENABLE_CHARGE_CREATION=true \
 WOOVI_ACCOUNT_ID='<identificador interno da conta>' \
-DATABASE_URL='postgres://...' \
 go run ./cmd/woovi-pix-mcp
 ```
 
@@ -66,8 +69,16 @@ e não é reenviada automaticamente: a ferramenta primeiro consulta a Woovi pela
 referência e só fecha a operação quando referência e valor batem. Se não for
 encontrada, permanece `UNKNOWN`. O valor explícito está limitado a R$ 100.000 e
 expiração de 300 a 2.592.000 segundos. Tentativas e resultados são auditados no
-PostgreSQL sem persistir AppID ou conteúdo do QR no log de auditoria. Esta fatia
+SQLite sem persistir AppID ou conteúdo do QR no log de auditoria. Esta fatia
 não implementa approval workflow.
+
+O arquivo SQLite é criado sob o diretório de configuração do usuário, em
+`woovi-pix-mcp/state/<escopo>/operations.db`; o escopo separa URL/ambiente e conta.
+`WOOVI_DATABASE_PATH` permite indicar outro arquivo privado. Nunca apague o
+arquivo para resolver um erro: ele guarda a evidência das tentativas anteriores.
+SQLite usa WAL, synchronous FULL e espera limitada para escritores concorrentes.
+Se `DATABASE_URL` estiver definido, a inicialização de escrita é bloqueada até
+que a importação explícita do histórico legado seja implementada e executada.
 
 ## Simulador local e teste MCP stdio
 
@@ -90,7 +101,7 @@ escuta apenas em `127.0.0.1:8081` e fornece a cobrança `demo-charge` (AppID
 e `WOOVI_APP_ID=simulator`. HTTP é permitido exclusivamente para localhost.
 
 Exemplo de chamada: “consulte a cobrança `demo-charge`”. Para testar criação,
-suba o simulador e habilite explicitamente escrita com PostgreSQL local conforme
+suba o simulador e habilite explicitamente escrita com SQLite local conforme
 a seção de configuração acima; use somente referências e valores fictícios.
 
 ## Contrato Woovi verificado

@@ -22,7 +22,7 @@ type CreateChargeInput struct {
 type Server struct {
 	client       charge.Client
 	creator      charge.ChargeCreator
-	store        *charge.OperationStore
+	store        charge.OperationRepository
 	tenant       string
 	writeEnabled bool
 }
@@ -34,7 +34,7 @@ func New(client charge.Client) (*Server, error) {
 	return &Server{client: client}, nil
 }
 
-func NewWithWrites(client charge.Client, creator charge.ChargeCreator, store *charge.OperationStore, tenant string, enabled bool) (*Server, error) {
+func NewWithWrites(client charge.Client, creator charge.ChargeCreator, store charge.OperationRepository, tenant string, enabled bool) (*Server, error) {
 	server, err := New(client)
 	if err != nil {
 		return nil, err
