@@ -12,6 +12,15 @@ WOOVI_APP_ID='<AppID de sandbox>' \
 go run ./cmd/woovi-pix-mcp
 ```
 
+Para compilar um binário local sem instalá-lo globalmente:
+
+```sh
+go build -o ./bin/woovi-pix-mcp ./cmd/woovi-pix-mcp
+```
+
+Execute `./bin/woovi-pix-mcp` com as mesmas variáveis de ambiente. O diretório
+`bin/` é apenas uma saída local e não deve ser versionado.
+
 O AppID fica no processo servidor e nunca é um argumento ou resultado MCP. Logs
 operacionais vão para stderr; stdout fica reservado ao protocolo stdio. O host
 Woovi de produção é `https://api.woovi.com`, mas o servidor aceita apenas HTTPS
