@@ -64,6 +64,23 @@ func TestWooviCreateTimeoutIsNotSafeToRetryBlindly(t *testing.T) {
 	}
 }
 
+func TestWooviCreateRejectsMalformedProviderResponse(t *testing.T) {
+	for name, body := range map[string]string{
+		"missing charge":         `{}`,
+		"fractional cent amount": `{"charge":{"identifier":"id","correlationID":"order","status":"ACTIVE","value":12.5}}`,
+		"missing identifier":     `{"charge":{"correlationID":"order","status":"ACTIVE","value":1200}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) }))
+			defer server.Close()
+			_, err := NewWooviClient(server.URL, "test-secret", server.Client()).CreateCharge(context.Background(), CreateChargeRequest{CorrelationID: "order", AmountCents: 1200, ExpiresInSeconds: 300})
+			if err == nil {
+				t.Fatal("expected malformed response error")
+			}
+		})
+	}
+}
+
 func TestCreateChargeRejectsInvalidInputBeforeCallingProvider(t *testing.T) {
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -53,6 +53,13 @@ func TestStdioClientCanCreateIdempotentChargeWithOptInAndPostgres(t *testing.T) 
 	if len(listed.Tools) != 2 {
 		t.Fatalf("expected read and opted-in create tools, got %+v", listed.Tools)
 	}
+	invalidAmount, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "pix_create_charge", Arguments: map[string]any{"reference": "mcp-create-test-001", "amount_cents": 2500.5, "expires_in_seconds": float64(1800)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !invalidAmount.IsError {
+		t.Fatalf("fractional cent value must be rejected: %+v", invalidAmount)
+	}
 	arguments := map[string]any{"reference": "mcp-create-test-001", "amount_cents": float64(2500), "expires_in_seconds": float64(1800)}
 	first, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "pix_create_charge", Arguments: arguments})
 	if err != nil || first.IsError {
