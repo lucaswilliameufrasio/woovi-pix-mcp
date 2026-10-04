@@ -29,7 +29,10 @@ type OperationRepository interface {
 //go:embed sqlite_migrations/*.sql
 var sqliteMigrations embed.FS
 
-type SQLiteStore struct{ db *sql.DB }
+type SQLiteStore struct {
+	db    *sql.DB
+	guard *flock.Flock
+}
 
 // OpenSQLiteStore opens a private file-backed store, never an in-memory database.
 // Callers must supply a private, profile-specific data directory.
@@ -44,6 +47,17 @@ func OpenSQLiteStore(ctx context.Context, path string) (*SQLiteStore, error) {
 	if err := os.MkdirAll(filepath.Dir(abs), 0700); err != nil {
 		return nil, errors.New("unable to create SQLite directory")
 	}
+	guard := flock.New(abs+".runtime.lock", flock.SetPermissions(0600))
+	locked, err := guard.TryRLock()
+	if err != nil || !locked {
+		return nil, errors.New("database is locked for recovery")
+	}
+	success := false
+	defer func() {
+		if !success {
+			_ = guard.Unlock()
+		}
+	}()
 	if info, err := os.Lstat(abs); err == nil && (!info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0) {
 		return nil, errors.New("SQLite file must be private and regular")
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -66,15 +80,23 @@ func OpenSQLiteStore(ctx context.Context, path string) (*SQLiteStore, error) {
 		return nil, errors.New("unable to open SQLite")
 	}
 	db.SetMaxOpenConns(1)
-	s := &SQLiteStore{db: db}
+	s := &SQLiteStore{db: db, guard: guard}
 	if err := s.migrate(ctx, abs+".migration.lock"); err != nil {
 		_ = db.Close()
 		return nil, errors.New("unable to initialize SQLite operation store")
 	}
+	success = true
 	return s, nil
 }
 
-func (s *SQLiteStore) Close() error { return s.db.Close() }
+func (s *SQLiteStore) Close() error {
+	err := s.db.Close()
+	lockErr := s.guard.Unlock()
+	if err != nil {
+		return err
+	}
+	return lockErr
+}
 
 func (s *SQLiteStore) migrate(ctx context.Context, lockPath string) error {
 	// Serialize Goose bootstrap across processes. OS locks are released on crash.

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"time"
@@ -20,7 +21,9 @@ import (
 
 func main() {
 	logger := log.New(os.Stderr, "woovi-pix-mcp: ", log.LstdFlags)
-	if err := cli(context.Background(), os.Args[1:], os.Stdin, os.Stdout, logger); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	if err := cli(ctx, os.Args[1:], os.Stdin, os.Stdout, logger); err != nil {
 		logger.Print(err)
 		os.Exit(1)
 	}
@@ -53,6 +56,9 @@ func run(ctx context.Context, getenv func(string) string, logger *log.Logger) er
 			}
 			scope := sha256.Sum256([]byte(baseURL + "\x00" + tenant))
 			path = filepath.Join(root, "woovi-pix-mcp", "state", hex.EncodeToString(scope[:]), "operations.db")
+		}
+		if _, err := os.Lstat(path + ".recovered"); !errors.Is(err, os.ErrNotExist) {
+			return errors.New("charge creation blocked after recovery; reconcile provider history before explicitly clearing the recovery marker")
 		}
 		store, err := charge.OpenSQLiteStore(ctx, path)
 		if err != nil {

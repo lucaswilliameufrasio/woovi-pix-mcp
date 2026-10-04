@@ -12,6 +12,8 @@ All notable changes to this project will be documented here.
   CI with file-backed SQLite, race detection, formatting, build, and lint checks.
 - Add CLI setup, saved profiles, OS credential-vault storage (explicit private
   file fallback), local doctor and stdio profile selection.
+- Add explicit client registration preview/apply with backups, and optional
+  Litestream file/S3 replication with protected restore and a recovery write gate.
 - Reject malformed, mismatched, or trailing provider response data and keep
   uncertain charge operations unresolved.
 

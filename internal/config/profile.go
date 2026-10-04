@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 
+	"github.com/gofrs/flock"
 	"github.com/zalando/go-keyring"
 )
 
@@ -140,6 +142,11 @@ func (s Profiles) Save(p Profile, secret string) error {
 	if err := privateDir(dir); err != nil {
 		return err
 	}
+	guard := flock.New(filepath.Join(dir, "profile.setup.lock"), flock.SetPermissions(0600))
+	if err := guard.Lock(); err != nil {
+		return errors.New("unable to lock profile configuration")
+	}
+	defer func() { _ = guard.Unlock() }()
 	// Editing existing profiles is deliberately deferred: changing the account
 	// must never silently reuse another account's credential or database.
 	if _, err := os.Lstat(filepath.Join(dir, "profile.json")); !errors.Is(err, os.ErrNotExist) {
@@ -194,4 +201,38 @@ func (s Profiles) Load(name string) (Profile, string, error) {
 func (s Profiles) DatabasePath(p Profile) string {
 	sum := sha256.Sum256([]byte(p.BaseURL() + "\x00" + p.Account))
 	return filepath.Join(s.Root, "state", hex.EncodeToString(sum[:]), "operations.db")
+}
+
+func (s Profiles) List() ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(s.Root, "profiles"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, errors.New("unable to list profiles")
+	}
+	var names []string
+	for _, entry := range entries {
+		if entry.IsDir() && validName.MatchString(entry.Name()) {
+			names = append(names, entry.Name())
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// Diagnose inspects local state without creating a database or contacting PSP.
+func (s Profiles) Diagnose(p Profile) (string, error) {
+	path := s.DatabasePath(p)
+	if _, err := os.Lstat(path + ".recovered"); !errors.Is(err, os.ErrNotExist) {
+		return "recovery marker present; charge creation blocked", nil
+	}
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "not initialized (created automatically when charge creation starts)", nil
+	}
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+		return "", errors.New("SQLite state is not a private regular file")
+	}
+	return "private database present (not a replica freshness check)", nil
 }

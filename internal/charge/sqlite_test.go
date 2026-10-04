@@ -163,3 +163,33 @@ func TestSQLitePendingAndUnknownSurviveRestart(t *testing.T) {
 		t.Fatalf("migration repeated: %d %v", count, err)
 	}
 }
+
+func TestSQLiteAbruptExitPreservesPending(t *testing.T) {
+	if os.Getenv("WOOVI_SQLITE_CRASH_HELPER") == "1" {
+		s, err := OpenSQLiteStore(context.Background(), os.Getenv("WOOVI_SQLITE_TEST_PATH"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := s.Reserve(context.Background(), "account", "create", "crash-reference", "hash"); err != nil {
+			t.Fatal(err)
+		}
+		// Deliberately bypass Close and the test harness cleanup: the OS must
+		// release both locks and SQLite must recover the committed WAL.
+		os.Exit(0)
+	}
+	path := filepath.Join(t.TempDir(), "crash.db")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSQLiteAbruptExitPreservesPending$")
+	cmd.Env = append(os.Environ(), "WOOVI_SQLITE_CRASH_HELPER=1", "WOOVI_SQLITE_TEST_PATH="+path)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("child %v %s", err, out)
+	}
+	s, err := OpenSQLiteStore(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	got, created, err := s.Reserve(context.Background(), "account", "create", "crash-reference", "hash")
+	if err != nil || created || got.Status != OperationPending {
+		t.Fatalf("crash recovery %+v %v %v", got, created, err)
+	}
+}

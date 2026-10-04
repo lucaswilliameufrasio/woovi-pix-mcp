@@ -11,6 +11,10 @@ DATABASE_PATH ?=
 help: ## Show available targets
 	@awk 'BEGIN { FS = ":.*## " } /^[a-zA-Z0-9_-]+:.*## / { printf "  make %-18s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
+.PHONY: test-litestream
+test-litestream: ## Full tests with real Litestream and disposable S3-compatible storage (TEST_LITESTREAM_BINARY=...)
+	bash scripts/test-litestream.sh
+
 run: ## Run the stdio MCP server (requires Woovi environment variables)
 	go run ./cmd/woovi-pix-mcp
 

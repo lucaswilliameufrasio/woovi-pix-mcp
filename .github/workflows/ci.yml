@@ -23,6 +23,14 @@ jobs:
         run: go test -count=1 ./...
       - name: Race test with file-backed SQLite
         run: go test -race -count=1 ./...
+      - name: Install pinned Litestream for optional recovery integration
+        run: |
+          mkdir -p "$RUNNER_TEMP/litestream"
+          curl -fsSL https://github.com/benbjohnson/litestream/releases/download/v0.5.17/litestream-0.5.17-linux-x86_64.tar.gz -o "$RUNNER_TEMP/litestream/release.tar.gz"
+          echo "cfb371176d164437ae869f8351cfde49bd1804ae71c61923f75c9cba9c9c006d  $RUNNER_TEMP/litestream/release.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/litestream/release.tar.gz" -C "$RUNNER_TEMP/litestream"
+      - name: Test real Litestream with file and S3-compatible storage
+        run: TEST_LITESTREAM_BINARY="$RUNNER_TEMP/litestream/litestream" make test-litestream
       - name: Build
         run: go build ./...
       - name: Install govulncheck

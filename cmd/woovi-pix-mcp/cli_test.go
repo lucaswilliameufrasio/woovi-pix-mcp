@@ -5,6 +5,8 @@ import (
 	"context"
 	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -35,5 +37,24 @@ func TestCLIRejectsUnexpectedSecretArgument(t *testing.T) {
 	err := cli(context.Background(), []string{"stdio", "secret-sentinel"}, strings.NewReader(""), &out, log.New(io.Discard, "", 0))
 	if err == nil || strings.Contains(err.Error(), "secret-sentinel") || strings.Contains(out.String(), "secret-sentinel") {
 		t.Fatal("argument rejection leaked secret")
+	}
+	err = cli(context.Background(), []string{"stdio", "--secret-sentinel"}, strings.NewReader(""), &out, log.New(io.Discard, "", 0))
+	if err == nil || strings.Contains(err.Error(), "secret-sentinel") || strings.Contains(out.String(), "secret-sentinel") {
+		t.Fatal("flag error leaked secret")
+	}
+}
+
+func TestRecoveredStateBlocksCreationWithoutProviderRequest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "operations.db")
+	if err := os.WriteFile(path+".recovered", []byte("recovered"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]string{"WOOVI_API_BASE_URL": "http://127.0.0.1:1", "WOOVI_APP_ID": "sentinel", "WOOVI_ENABLE_CHARGE_CREATION": "true", "WOOVI_ACCOUNT_ID": "account", "WOOVI_DATABASE_PATH": path}
+	err := run(context.Background(), func(key string) string { return values[key] }, log.New(io.Discard, "", 0))
+	if err == nil || !strings.Contains(err.Error(), "blocked after recovery") {
+		t.Fatalf("recovery gate: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("blocked startup initialized fresh database")
 	}
 }
