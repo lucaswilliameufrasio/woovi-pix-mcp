@@ -11,12 +11,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"sort"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
+	"github.com/pressly/goose/v3/lock"
 )
 
 var ErrIdempotencyConflict = errors.New("idempotency key was already used with a different request")
@@ -46,46 +47,24 @@ type OperationStore struct{ pool *pgxpool.Pool }
 func NewOperationStore(pool *pgxpool.Pool) *OperationStore { return &OperationStore{pool: pool} }
 
 func (s *OperationStore) Migrate(ctx context.Context) error {
-	tx, err := s.pool.Begin(ctx)
+	db := stdlib.OpenDBFromPool(s.pool)
+	defer func() { _ = db.Close() }()
+	migrations, err := fs.Sub(migrationFiles, "migrations")
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('woovi_pix_mcp_schema'))`); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS pix_charge_schema_migrations (
-		version TEXT PRIMARY KEY,
-		applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-	)`); err != nil {
-		return err
-	}
-	entries, err := fs.Glob(migrationFiles, "migrations/*.sql")
+	locker, err := lock.NewPostgresSessionLocker(lock.WithLockID(8_804_208_801))
 	if err != nil {
 		return err
 	}
-	sort.Strings(entries)
-	for _, path := range entries {
-		version := strings.TrimSuffix(strings.TrimPrefix(path, "migrations/"), ".sql")
-		var applied bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pix_charge_schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {
-			return err
-		}
-		if applied {
-			continue
-		}
-		sql, err := migrationFiles.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, string(sql)); err != nil {
-			return fmt.Errorf("apply schema migration %s: %w", version, err)
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO pix_charge_schema_migrations(version) VALUES($1)`, version); err != nil {
-			return err
-		}
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations, goose.WithSessionLocker(locker))
+	if err != nil {
+		return err
 	}
-	return tx.Commit(ctx)
+	if _, err := provider.Up(ctx); err != nil {
+		return fmt.Errorf("apply database migrations: %w", err)
+	}
+	return nil
 }
 
 func (s *OperationStore) Audit(ctx context.Context, tenant, operationID, tool, outcome string) error {

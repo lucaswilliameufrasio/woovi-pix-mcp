@@ -1,4 +1,5 @@
-CREATE TABLE pix_charge_operations (
+-- +goose Up
+CREATE TABLE IF NOT EXISTS pix_charge_operations (
     id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL,
     operation TEXT NOT NULL,
@@ -11,7 +12,7 @@ CREATE TABLE pix_charge_operations (
     UNIQUE (tenant_id, operation, idempotency_key)
 );
 
-CREATE TABLE pix_charge_audit (
+CREATE TABLE IF NOT EXISTS pix_charge_audit (
     id BIGSERIAL PRIMARY KEY,
     tenant_id TEXT NOT NULL,
     operation_id TEXT,
@@ -19,3 +20,7 @@ CREATE TABLE pix_charge_audit (
     outcome TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- +goose Down
+DROP TABLE IF EXISTS pix_charge_audit;
+DROP TABLE IF EXISTS pix_charge_operations;

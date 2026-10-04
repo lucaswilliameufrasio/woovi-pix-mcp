@@ -4,6 +4,10 @@ Servidor MCP local em Go para consultar e, opcionalmente, criar cobranças Pix
 Woovi. A ferramenta `pix_create_charge` fica desativada por padrão. Não há Pix
 Out, transferências, reembolsos ou cancelamentos financeiros.
 
+Stack escolhida para este repo: Go 1.27.1, PostgreSQL 18, pgx v5 e Goose v3
+para migrações SQL. Quando escrita está habilitada, o servidor aplica as
+migrações Goose embutidas ao iniciar.
+
 ## Executar
 
 ```sh

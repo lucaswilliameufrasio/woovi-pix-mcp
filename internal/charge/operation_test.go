@@ -113,11 +113,11 @@ func TestPostgresOperationStoreAppliesMigrationsExactlyOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM pix_charge_schema_migrations WHERE version='0001_init'`).Scan(&count); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM goose_db_version WHERE version_id=1 AND is_applied`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {
-		t.Fatalf("expected one applied versioned migration, got %d", count)
+		t.Fatalf("expected Goose to record migration version 1 exactly once, got %d", count)
 	}
 }
 
