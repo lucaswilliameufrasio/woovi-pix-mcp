@@ -6,6 +6,7 @@ import (
 	"golang.org/x/time/rate"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -76,6 +77,26 @@ func TestWooviClientHonorsCancelledContextBeforeProviderCall(t *testing.T) {
 	}
 	if called {
 		t.Fatal("provider request was sent after context cancellation")
+	}
+}
+
+func TestWooviProviderHTTPFailuresAreBoundedAndSanitized(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusTooManyRequests, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, `{"secret":"private provider detail"}`, status)
+			}))
+			defer server.Close()
+			client := NewWooviClient(server.URL, "test-secret", server.Client())
+			_, err := client.GetCharge(context.Background(), "charge-1")
+			if err == nil || err.Error() != "provider returned HTTP "+strconv.Itoa(status) || contains(err.Error(), "private") || contains(err.Error(), "test-secret") {
+				t.Fatalf("unsanitized provider error: %v", err)
+			}
+			_, err = client.CreateCharge(context.Background(), CreateChargeRequest{CorrelationID: "order", AmountCents: 100, ExpiresInSeconds: 300})
+			if err == nil || err.Error() != "provider returned HTTP "+strconv.Itoa(status) || contains(err.Error(), "private") || contains(err.Error(), "test-secret") {
+				t.Fatalf("unsanitized create error: %v", err)
+			}
+		})
 	}
 }
 
