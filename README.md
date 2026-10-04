@@ -58,6 +58,10 @@ não gera nova alteração/backup. Codex/TOML deve ser configurado manualmente.
 
 `make help` lista os comandos disponíveis. Exemplos:
 
+Para `make fmt`/`make check`, além de Go, instale golangci-lint 2.14.0, Python
+3.12+ e uv. Ruff é resolvido na versão fixa 0.16.10. O lint também verifica
+espaçamento entre blocos Go; não basta passar no `gofmt`.
+
 ```sh
 make test
 make check
@@ -68,6 +72,17 @@ Os testes usam arquivos SQLite reais temporários, inclusive processos separados
 As novas migrations são timestamped e criadas pela
 Goose CLI. Não há target `migrate-down`/`reset`: a migration Down remove as
 tabelas de operação/auditoria e pode apagar evidência de idempotência.
+
+## Processo de release
+
+**Prepare Release** abre um PR de changelog; após revisão/CI e merge, uma tag
+`vX.Y.Z` dispara **Release**, que repete os checks e cria um **draft** com binários
+Linux/macOS/Windows (amd64/arm64) e checksums SHA-256. Publicar o draft continua
+sendo uma decisão manual. Nenhuma release é disparada ao adicionar os workflows.
+
+Veja [docs/releases.md](docs/releases.md) para configuração, preparação,
+tagueamento, verificação de artefatos e limitações de plataforma. Para validar
+o empacotamento local sem publicar: `make release-snapshot` (GoReleaser 2.18.2).
 
 ## Executar
 

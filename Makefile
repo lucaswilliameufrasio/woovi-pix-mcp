@@ -2,11 +2,12 @@ APP := woovi-pix-mcp
 MIGRATIONS_DIR := internal/charge/sqlite_migrations
 GOOSE_VERSION := v3.28.0
 GOOSE := go run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION)
+RUFF := uvx --from ruff==0.16.10 ruff
 
 DATABASE_PATH ?=
 
 .DEFAULT_GOAL := help
-.PHONY: help run simulator build fmt fmt-check lint vet test test-race test-all govulncheck check migrate-create migrate-up migrate-status migrate-validate
+.PHONY: help run simulator build fmt fmt-check lint vet test test-race test-all govulncheck check migrate-create migrate-up migrate-status migrate-validate test-release release-check release-snapshot workflow-check
 
 help: ## Show available targets
 	@awk 'BEGIN { FS = ":.*## " } /^[a-zA-Z0-9_-]+:.*## / { printf "  make %-18s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -24,14 +25,18 @@ simulator: ## Run the local HTTP Woovi simulator
 build: ## Compile all Go packages
 	go build ./...
 
-fmt: ## Format Go source files
-	gofmt -w $$(find . -type f -name '*.go' -not -path './.git/*')
+fmt: ## Format Go/Python and organize imports
+	golangci-lint fmt
+	$(RUFF) format scripts
+	$(RUFF) check --fix scripts
 
-fmt-check: ## Verify Go source formatting
-	@test -z "$$(gofmt -l .)"
+fmt-check: ## Verify Go/Python source formatting
+	@diff="$$(golangci-lint fmt --diff)" && test -z "$$diff"
+	$(RUFF) format --check scripts
 
-lint: ## Run golangci-lint
+lint: ## Run Go whitespace/static analysis and Python lint
 	golangci-lint run ./...
+	$(RUFF) check scripts
 
 vet: ## Run go vet
 	go vet ./...
@@ -47,7 +52,20 @@ test-all: test test-race ## Run normal and race-enabled tests
 govulncheck: ## Scan the Go code and dependencies for known vulnerabilities
 	go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
-check: fmt-check vet test test-race build lint govulncheck ## Run local quality checks
+test-release: ## Test release version and tag validation without publishing
+	python3 -m unittest discover -s scripts -p 'test_*.py'
+
+workflow-check: ## Lint GitHub Actions syntax and permissions with pinned actionlint
+	go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+
+release-check: ## Validate GoReleaser configuration (requires GoReleaser 2.18.2)
+	goreleaser check
+
+release-snapshot: release-check ## Build six platform archives/checksums locally, without publishing
+	goreleaser release --snapshot --clean
+	python3 scripts/check_release_artifacts.py dist
+
+check: fmt-check vet test test-race build lint govulncheck test-release workflow-check ## Run local quality checks
 
 migrate-create: ## Create a timestamped Goose SQL migration (use name=...)
 	@test -n "$(name)" || (echo "Usage: make migrate-create name=add_charge_metadata" >&2; exit 2)

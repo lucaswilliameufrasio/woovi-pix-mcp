@@ -1,0 +1,61 @@
+version: 2
+
+project_name: woovi-pix-mcp
+
+builds:
+  - id: woovi-pix-mcp
+    main: ./cmd/woovi-pix-mcp
+    binary: woovi-pix-mcp
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/lucaseufrasio/woovi-pix-mcp/internal/buildinfo.Version={{ .Version }} -X github.com/lucaseufrasio/woovi-pix-mcp/internal/buildinfo.Commit={{ .FullCommit }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - formats: [tar.gz]
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - CHANGELOG.md
+      - docs/sandbox.md
+      - docs/releases.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+source:
+  enabled: true
+  name_template: '{{ .ProjectName }}_{{ .Version }}_source'
+  format: tar.gz
+
+changelog:
+  use: git
+  filters:
+    exclude:
+      - '^chore\(release\):'
+
+release:
+  github:
+    owner: lucaswilliameufrasio
+    name: woovi-pix-mcp
+  draft: true
+  header: |
+    ## Instalação
+
+    Baixe o arquivo da sua plataforma (Linux/macOS: tar.gz; Windows: zip) e
+    `checksums.txt`. Valide SHA-256 antes de extrair e executar.
+    O binário não requer Go, PostgreSQL ou Docker. Litestream é separado e opcional.
+
+    Configure usando `woovi-pix-mcp setup --profile sandbox` e confira com
+    `woovi-pix-mcp doctor --profile sandbox`. Nunca copie o AppID para o cliente MCP.
+
+    Validação de runtime feita em Linux; macOS/Windows são builds cross-compilados.
+    O fallback de segredo em arquivo não é recomendado no Windows sem validar ACLs.

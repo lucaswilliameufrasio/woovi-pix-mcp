@@ -34,6 +34,7 @@ func newOperationID() (string, error) {
 	if _, err := rand.Read(id[:]); err != nil {
 		return "", err
 	}
+
 	return hex.EncodeToString(id[:]), nil
 }
 
@@ -42,6 +43,8 @@ func RequestHash(input CreateChargeRequest) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	sum := sha256.Sum256(canonical)
+
 	return base64.RawURLEncoding.EncodeToString(sum[:]), nil
 }

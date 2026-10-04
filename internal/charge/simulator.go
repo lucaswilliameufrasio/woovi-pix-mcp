@@ -32,22 +32,28 @@ func (s *Simulator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.createCharge(w, r)
 		return
 	}
+
 	if r.Method != http.MethodGet || !strings.HasPrefix(r.URL.Path, "/api/v1/charge/") {
 		http.NotFound(w, r)
 		return
 	}
+
 	if r.Header.Get("Authorization") != "simulator" {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
+
 	id := strings.TrimPrefix(r.URL.Path, "/api/v1/charge/")
+
 	s.mu.RLock()
 	charge, ok := s.charges[id]
 	s.mu.RUnlock()
+
 	if !ok {
 		http.Error(w, `{"error":"charge not found"}`, http.StatusNotFound)
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"charge": map[string]any{
 		"identifier": charge.ID, "correlationID": charge.Reference, "status": charge.Status,
@@ -60,6 +66,7 @@ func (s *Simulator) createCharge(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
+
 	var request struct {
 		CorrelationID string `json:"correlationID"`
 		Value         int64  `json:"value"`
@@ -69,14 +76,17 @@ func (s *Simulator) createCharge(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid charge request"}`, http.StatusBadRequest)
 		return
 	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	for _, existing := range s.charges {
 		if existing.Reference == request.CorrelationID {
 			writeCharge(w, existing)
 			return
 		}
 	}
+
 	id := "sim-" + strconv.FormatInt(int64(len(s.charges)+1), 10)
 	created := Charge{ID: id, Reference: request.CorrelationID, Status: "ACTIVE", AmountCents: request.Value, Currency: "BRL", ExpiresAt: time.Now().Add(time.Duration(request.ExpiresIn) * time.Second), PixCode: "000201-SIMULATED-PIX-CODE"}
 	s.charges[id] = created

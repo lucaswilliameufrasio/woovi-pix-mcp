@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -11,14 +13,33 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
       - name: Verify formatting
         run: test -z "$(gofmt -l .)"
+      - name: Install pinned Python tooling
+        uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: uv@0.12.23
+      - name: Format and lint release scripts
+        run: |
+          uvx --from ruff==0.16.10 ruff format --check scripts
+          uvx --from ruff==0.16.10 ruff check scripts
+      - name: Verify modules and vet
+        run: |
+          go mod verify
+          go vet ./...
+      - name: Test release validation
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: Validate GitHub Actions workflows
+        run: make workflow-check
       - name: Test with file-backed SQLite
         run: go test -count=1 ./...
       - name: Race test with file-backed SQLite
@@ -38,6 +59,30 @@ jobs:
       - name: Scan Go vulnerabilities
         run: govulncheck ./...
       - name: Lint
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: v2.14.0
+      - name: Verify Go formatters
+        run: |
+          diff="$(golangci-lint fmt --diff)"
+          test -z "$diff"
+
+  release-snapshot:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Validate and package all release targets without publishing
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: v2.18.2
+          args: release --snapshot --clean
+      - name: Verify archives, checksums and native binary metadata
+        run: python3 scripts/check_release_artifacts.py dist

@@ -4,6 +4,9 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Add manual release-preparation PRs, reusable quality gates and GoReleaser
+  snapshots/draft releases for six platforms, with SHA-256 checksums and
+  embedded CLI/MCP version metadata.
 - Add a local stdio MCP server with `pix_get_charge` and opt-in
   `pix_create_charge` tools.
 - Persist idempotency state and an audit trail in embedded SQLite; reconcile
