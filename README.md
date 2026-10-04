@@ -114,27 +114,168 @@ arquivo para resolver um erro: ele guarda a evidência das tentativas anteriores
 SQLite usa WAL, synchronous FULL e espera limitada para escritores concorrentes.
 Não há DATABASE_URL nem importação PostgreSQL; esse MCP não teve usuários legados.
 
-## Simulador local e teste MCP stdio
+## Teste rápido local — sem chamar a Woovi
 
-`examples/mcp-client.json` mostra o formato ilustrativo para clientes que usam
-configuração MCP JSON. Troque o caminho pelo binário local; somente o nome do
-perfil aparece no cliente, nunca o AppID.
+Execute os comandos na raiz deste repositório, com Go 1.27.1 instalado. Este
+roteiro usa somente dados fictícios e não precisa de conta Woovi ou Docker.
 
-O teste de integração sobe o simulador HTTP local e conecta um cliente MCP oficial
-ao binário do servidor:
+### 1. Terminal 1: subir o simulador
 
 ```sh
-go test -count=1 ./...
+go run ./cmd/woovi-simulator
 ```
 
-Para executar o simulador manualmente, rode `go run ./cmd/woovi-simulator`; ele
-escuta apenas em `127.0.0.1:8081` e fornece a cobrança `demo-charge` (AppID
-`simulator`). Faça setup de um perfil `simulator`, escolhendo esse ambiente e
-digitando `simulator` no prompt AppID. HTTP é permitido exclusivamente para localhost.
+Deixe esse terminal aberto. O simulador escuta em `127.0.0.1:8081`.
 
-Exemplo de chamada: “consulte a cobrança `demo-charge`”. Para testar criação,
-suba o simulador e habilite explicitamente escrita com SQLite local conforme
-a seção de configuração acima; use somente referências e valores fictícios.
+### 2. Terminal 2: compilar e configurar
+
+```sh
+go build -o ./bin/woovi-pix-mcp ./cmd/woovi-pix-mcp
+./bin/woovi-pix-mcp setup --profile teste
+```
+
+Responda ao assistente:
+
+- Ambiente: `simulator`
+- Conta: `conta-teste`
+- Habilitar criação: `no`
+- AppID: `simulator` (a entrada fica oculta)
+
+Se o cofre do sistema estiver indisponível, repita o setup com o fallback
+explícito abaixo. Ele guarda o AppID sem criptografia em arquivo privado 0600:
+
+```sh
+./bin/woovi-pix-mcp setup --profile teste --secret-file
+```
+
+Se o perfil já existir, reutilize-o ou escolha outro nome; não há sobrescrita.
+
+### 3. Conferir a configuração
+
+```sh
+./bin/woovi-pix-mcp doctor --profile teste
+```
+
+**Esperado:** ambiente `simulator`, credencial disponível sem exibir AppID e
+criação desabilitada. O banco pode aparecer como não inicializado: isso é normal
+em modo somente leitura. `doctor` não consulta nem mesmo o simulador.
+
+### 4. Conectar ao OpenCode V2
+
+Primeiro valide a alteração (preview), depois aplique:
+
+```sh
+./bin/woovi-pix-mcp install-mcp --profile teste \
+  --client opencode --config ~/.config/opencode/opencode.json
+
+./bin/woovi-pix-mcp install-mcp --profile teste \
+  --client opencode --config ~/.config/opencode/opencode.json --apply
+```
+
+Use o caminho do arquivo realmente usado pelo seu cliente. Precisa ser JSON,
+não JSONC; diretório 0700 e arquivo 0600, sem symlinks. Se o instalador recusar,
+revise o motivo antes de alterar permissões ou use configuração manual. Para
+Claude/Cursor, selecione `--client claude`/`--client cursor` e o respectivo arquivo.
+`examples/mcp-client.json` ilustra a configuração manual: binário e perfil,
+**nunca AppID**. O binário precisa permanecer no caminho usado na instalação.
+
+### 5. Consultar a cobrança fictícia
+
+Reabra o OpenCode para carregar o servidor `woovi-pix-teste` e peça:
+
+> Use o servidor woovi-pix-teste para consultar a cobrança `demo-charge` com
+> `pix_get_charge`. Não use outros servidores nem crie cobranças.
+
+**Esperado:** ID `demo-charge`, referência `demo-order-001`, estado `ACTIVE` e
+valor `1250` centavos (**R$ 12,50**), com código Pix fictício. Nenhuma chamada
+Woovi ou operação financeira real é feita. Termine o simulador com Ctrl+C.
+
+**O simulador manual só suporta consulta.** Criação/idempotência são exercitadas
+pelo simulador específico dos testes automatizados, não por esse comando.
+Para rodar a suíte e as verificações do projeto:
+
+```sh
+make check
+```
+
+## Teste com o sandbox da própria Woovi
+
+Este roteiro usa a API de teste externa da Woovi, **não o simulador local**.
+Não é necessário executar `woovi-simulator`. Execute apenas com autorização
+para usar essa conta; os passos abaixo não foram executados pela implementação
+ou pela CI. Não use credenciais de produção nem faça pagamentos reais.
+
+### 1. Preparar a conta e uma cobrança de teste
+
+- Acesse [app.woovi-sandbox.com](https://app.woovi-sandbox.com/). O sandbox tem
+  cadastro separado: dados de produção não funcionam nele.
+- No painel **do sandbox**, obtenha um AppID da sua conta. A documentação de
+  autenticação indica `Admin Panel > Permissions > APIs` para gerar a chave,
+  com permissão de administrador. Use os escopos necessários para consulta.
+- Tenha uma cobrança criada no sandbox pelo painel e copie seu ID ou
+  `correlationID`. `demo-charge` é exclusivo do simulador e não deve ser usado aqui.
+
+Referências oficiais: [ambiente de teste](https://developers.woovi.com/docs/test-environment)
+e [criação da chave API](https://developers.woovi.com/en/docs/apis/api-getting-started).
+
+### 2. Compilar e configurar o perfil sandbox
+
+```sh
+go build -o ./bin/woovi-pix-mcp ./cmd/woovi-pix-mcp
+./bin/woovi-pix-mcp setup --profile sandbox
+```
+
+Responda:
+
+- Ambiente: `sandbox` (seleciona `https://api.woovi-sandbox.com`)
+- Conta: um identificador estável dessa conta, por exemplo `minha-conta-sandbox`
+- Habilitar criação: `no`, para começar somente com consulta
+- AppID: **o AppID do sandbox**, no prompt oculto; nunca cole no chat ou no cliente
+
+A conta é o escopo local de idempotência, não outro segredo; mantenha o mesmo
+identificador ao criar perfis para essa conta. Se o cofre estiver indisponível e
+você aceitar o arquivo privado sem criptografia, use explicitamente:
+
+```sh
+./bin/woovi-pix-mcp setup --profile sandbox --secret-file
+```
+
+### 3. Conferir e conectar ao cliente
+
+```sh
+./bin/woovi-pix-mcp doctor --profile sandbox
+
+./bin/woovi-pix-mcp install-mcp --profile sandbox \
+  --client opencode --config ~/.config/opencode/opencode.json
+
+./bin/woovi-pix-mcp install-mcp --profile sandbox \
+  --client opencode --config ~/.config/opencode/opencode.json --apply
+```
+
+Valem os requisitos de JSON e permissões do roteiro local. **Esperado no doctor:**
+ambiente `sandbox`, credencial disponível e criação desabilitada. Isso valida
+apenas a configuração local, **não autenticação ou conectividade com a Woovi**.
+
+### 4. Consultar uma cobrança do sandbox
+
+Reabra o cliente e substitua `<ID_OU_CORRELATION_ID>` pelo identificador copiado
+do painel. Se houver outros perfis instalados, selecione `woovi-pix-sandbox`:
+
+> Use somente o servidor woovi-pix-sandbox para chamar `pix_get_charge` com
+> `id` igual a `<ID_OU_CORRELATION_ID>`. Não crie nem pague cobranças.
+
+**Esperado:** a cobrança da sua conta sandbox, com ID/referência, estado e valor
+em centavos coerentes com o painel, sem AppID ou dados do pagador. Estado e
+valor dependem da cobrança escolhida; não há resultado fixo de R$ 12,50 aqui.
+Essa consulta é a verificação efetiva de API, credencial e escopo da conta.
+
+### 5. Opcional: testar criação e idempotência no sandbox
+
+Somente se quiser testar escrita e tiver autorização, siga o roteiro detalhado
+em [docs/sandbox.md](docs/sandbox.md#criação-e-idempotência-opcionais). Ele cria
+outro perfil com opt-in explícito e explica como repetir o mesmo payload e
+verificar conflito. Não pague o QR gerado, não use produção e não invente outra
+referência para contornar um timeout ou resultado incerto.
 
 ## Contrato Woovi verificado
 

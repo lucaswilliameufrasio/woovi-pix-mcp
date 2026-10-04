@@ -16,6 +16,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/lucaseufrasio/woovi-pix-mcp/internal/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/sys/unix"
 )
 
 func TestRealTerminalSetupAndProfileStdio(t *testing.T) {
@@ -65,6 +66,25 @@ func TestRealTerminalSetupAndProfileStdio(t *testing.T) {
 	}
 	for _, step := range []struct{ prompt, answer string }{{"Environment", "sandbox"}, {"Account identifier", "test-account"}, {"Enable charge creation", "no"}, {"input hidden", "tty-secret-sentinel"}} {
 		waitFor(step.prompt)
+		if step.prompt == "input hidden" {
+			// Printing the prompt and ReadPassword disabling ECHO are separate
+			// syscalls. Wait for the actual terminal state, not an arbitrary
+			// delay, before simulating entry into the hidden password prompt.
+			for {
+				state, err := unix.IoctlGetTermios(int(terminal.Fd()), unix.TCGETS)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if state.Lflag&unix.ECHO == 0 {
+					break
+				}
+				select {
+				case <-ctx.Done():
+					t.Fatal("terminal did not disable password echo")
+				case <-time.After(time.Millisecond):
+				}
+			}
+		}
 		if _, err := io.WriteString(terminal, step.answer+"\n"); err != nil {
 			t.Fatal(err)
 		}
