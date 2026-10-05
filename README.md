@@ -41,6 +41,32 @@ Configure seu cliente com o caminho absoluto do binário e argumentos
 `["stdio", "--profile", "sandbox"]`. Não inclua AppID na configuração do cliente.
 `doctor` é diagnóstico local; não chama Woovi nem cria cobrança.
 
+## Instalar
+
+No Linux ou macOS, instale a release mais recente em `~/.local/bin`:
+
+```sh
+curl -fsSL https://github.com/lucaswilliameufrasio/woovi-pix-mcp/releases/latest/download/woovi-pix-mcp-installer.sh | sh
+```
+
+Para instalar uma versão específica, baixe o instalador da release e informe a
+tag. Exemplo com `v0.1.2`:
+
+```sh
+curl -fsSL https://github.com/lucaswilliameufrasio/woovi-pix-mcp/releases/download/v0.1.2/woovi-pix-mcp-installer.sh | sh -s -- --tag v0.1.2
+```
+
+No Windows PowerShell, para a release mais recente:
+
+```powershell
+Invoke-WebRequest https://github.com/lucaswilliameufrasio/woovi-pix-mcp/releases/latest/download/woovi-pix-mcp-installer.ps1 -OutFile woovi-pix-mcp-installer.ps1
+.\woovi-pix-mcp-installer.ps1
+```
+
+Passe `-Tag v0.1.2` para fixar uma versão no Windows.
+Os instaladores verificam o SHA-256 do pacote antes da instalação. É necessário
+adicionar `~/.local/bin` ao `PATH` se ainda não estiver configurado.
+
 `profiles` lista os nomes configurados sem carregar ou exibir credenciais.
 O identificador de conta precisa ser estável e corresponder à conta do AppID:
 o servidor não consegue verificar isso offline. Dois perfis da mesma conta e

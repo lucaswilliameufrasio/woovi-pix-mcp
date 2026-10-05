@@ -69,6 +69,7 @@ O draft contém:
 - Binário `woovi-pix-mcp` para Linux, macOS e Windows, amd64/arm64.
 - `.tar.gz` para Linux/macOS, `.zip` para Windows e arquivo-fonte `.tar.gz`.
 - `checksums.txt` SHA-256, licença Apache 2.0, README, changelog e roteiro sandbox.
+- Instaladores POSIX shell e Windows PowerShell, que validam SHA-256 antes de instalar.
 - Versão da tag/commit embutida no CLI (`--version`) e versão no handshake MCP.
 
 Binários usam `CGO_ENABLED=0` e não precisam de Go/PostgreSQL/Docker em runtime.
@@ -77,11 +78,20 @@ são Linux; builds macOS/Windows não equivalem a teste funcional nesses sistema
 O fallback de segredo por arquivo no Windows depende de validação de ACLs e
 não é recomendado enquanto isso não for feito.
 
-Baixe o artefato da sua plataforma e confira antes de executar. Exemplo Linux:
+Instale com o script da release (Linux/macOS):
+
+```sh
+curl -fsSL https://github.com/lucaswilliameufrasio/woovi-pix-mcp/releases/download/v0.1.2/woovi-pix-mcp-installer.sh | sh -s -- --tag v0.1.2
+```
+
+No Windows, baixe `woovi-pix-mcp-installer.ps1` e execute com `-Tag v0.1.2`.
+Os scripts aceitam `latest` por padrão; releases publicadas nunca devem ser alteradas.
+
+Alternativamente, baixe o artefato da plataforma e confira antes de executar. Exemplo Linux:
 
 ```sh
 sha256sum --ignore-missing --check checksums.txt
-tar -xzf woovi-pix-mcp_0.1.0_linux_amd64.tar.gz
+tar -xzf woovi-pix-mcp_0.1.2_linux_amd64.tar.gz
 ./woovi-pix-mcp --version
 ```
 
@@ -91,8 +101,8 @@ Checksums protegem contra corrupção, não substituem a confiança na origem do
 download. Os arquivos não possuem assinatura/notarização de plataforma.
 
 Revise segurança, licença, changelog e artefatos antes de publicar o draft pela
-interface do GitHub. Não existe publicação automática de pacotes, instalador,
-Docker image, npm, Homebrew ou MCP Registry nesta implementação.
+interface do GitHub. Não há publicação automática de Docker image, npm, Homebrew
+ou MCP Registry nesta implementação.
 
 ## Validação local sem publicar
 

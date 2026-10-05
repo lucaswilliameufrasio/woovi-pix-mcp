@@ -6,7 +6,12 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from check_release_artifacts import DOCUMENTATION, verify_checksums, verify_target_archive
+from check_release_artifacts import (
+    CHECKSUM_EXTRAS,
+    DOCUMENTATION,
+    verify_checksums,
+    verify_target_archive,
+)
 
 
 class ChecksumTests(unittest.TestCase):
@@ -46,6 +51,18 @@ class ChecksumTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "duplicate"):
             verify_checksums(self.root)
+
+    def test_verifies_release_installer_sources_as_snapshot_checksum_extras(self):
+        entries = []
+        for name in sorted(CHECKSUM_EXTRAS):
+            source = Path(__file__).resolve().parent / name
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            entries.append(f"{digest}  {name}")
+        (self.root / "checksums.txt").write_text("\n".join(entries) + "\n")
+
+        artifacts = verify_checksums(self.root)
+
+        self.assertEqual(set(artifacts), CHECKSUM_EXTRAS)
 
 
 class ArchiveTests(unittest.TestCase):

@@ -31,6 +31,9 @@ archives:
 checksum:
   name_template: checksums.txt
   algorithm: sha256
+  extra_files:
+    - glob: ./scripts/woovi-pix-mcp-installer.sh
+    - glob: ./scripts/woovi-pix-mcp-installer.ps1
 
 source:
   enabled: true
@@ -51,12 +54,28 @@ release:
   header: |
     ## Instalação
 
-    Baixe o arquivo da sua plataforma (Linux/macOS: tar.gz; Windows: zip) e
-    `checksums.txt`. Valide SHA-256 antes de extrair e executar.
-    O binário não requer Go, PostgreSQL ou Docker. Litestream é separado e opcional.
+    ### Linux e macOS
 
-    Configure usando `woovi-pix-mcp setup --profile sandbox` e confira com
+    ```sh
+    curl -fsSL https://github.com/lucaswilliameufrasio/woovi-pix-mcp/releases/download/{{ .Tag }}/woovi-pix-mcp-installer.sh | sh -s -- --tag {{ .Tag }}
+    ```
+
+    ### Windows PowerShell
+
+    ```powershell
+    Invoke-WebRequest https://github.com/lucaswilliameufrasio/woovi-pix-mcp/releases/download/{{ .Tag }}/woovi-pix-mcp-installer.ps1 -OutFile woovi-pix-mcp-installer.ps1
+    .\woovi-pix-mcp-installer.ps1 -Tag {{ .Tag }}
+    ```
+
+    Os instaladores verificam SHA-256 antes de instalar. Isso protege contra
+    corrupção no download, não contra comprometimento da release. O binário não
+    requer Go, PostgreSQL ou Docker em runtime; Litestream é separado e opcional.
+
+    Configure com `woovi-pix-mcp setup --profile sandbox` e valide com
     `woovi-pix-mcp doctor --profile sandbox`. Nunca copie o AppID para o cliente MCP.
 
-    Validação de runtime feita em Linux; macOS/Windows são builds cross-compilados.
+    Runtime validado em Linux; macOS/Windows são builds cross-compilados.
     O fallback de segredo em arquivo não é recomendado no Windows sem validar ACLs.
+  extra_files:
+    - glob: ./scripts/woovi-pix-mcp-installer.sh
+    - glob: ./scripts/woovi-pix-mcp-installer.ps1
