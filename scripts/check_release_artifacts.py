@@ -10,6 +10,7 @@ from pathlib import Path
 SYSTEMS = ("linux", "darwin", "windows")
 ARCHITECTURES = ("amd64", "arm64")
 DOCUMENTATION = ("LICENSE", "README.md", "CHANGELOG.md", "docs/sandbox.md", "docs/releases.md")
+CHECKSUM_EXTRAS = {"woovi-pix-mcp-installer.sh", "woovi-pix-mcp-installer.ps1"}
 
 
 def verify_checksums(root: Path) -> dict[str, Path]:
@@ -24,7 +25,12 @@ def verify_checksums(root: Path) -> dict[str, Path]:
         name = name.strip().removeprefix("*")
         path = root / name
 
-        if Path(name).name != name or not path.is_file():
+        if Path(name).name != name:
+            raise ValueError("invalid or missing checksum artifact")
+
+        if not path.is_file() and name in CHECKSUM_EXTRAS:
+            path = Path(__file__).resolve().parent / name
+        if not path.is_file():
             raise ValueError("invalid or missing checksum artifact")
 
         if name in artifacts:
@@ -87,6 +93,8 @@ def smoke_test_native_binary(root: Path) -> str:
 
 def check_artifacts(root: Path) -> str:
     artifacts = verify_checksums(root)
+    if missing := CHECKSUM_EXTRAS - artifacts.keys():
+        raise ValueError(f"checksums.txt missing installer checksums: {', '.join(sorted(missing))}")
 
     for system in SYSTEMS:
         for architecture in ARCHITECTURES:
