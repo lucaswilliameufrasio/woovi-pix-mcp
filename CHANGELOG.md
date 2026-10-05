@@ -4,6 +4,11 @@ Changes to Woovi Pix MCP. Creation is opt-in; no Pix Out, transfers, refunds or
 financial cancellations. Entries are generated from Git history and reviewed
 in a release pull request before tagging.
 
+## [0.1.2] - 2026-10-05
+
+### Features
+- **release:** Add verified platform installers
+
 ## [0.1.1] - 2026-10-04
 
 
@@ -60,4 +65,3 @@ in a release pull request before tagging.
 ### Tests
 - Cover invalid cents and malformed Woovi responses
 - Verify sanitized Woovi HTTP error mapping
-
