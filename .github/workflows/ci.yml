@@ -25,7 +25,7 @@ jobs:
       - name: Verify formatting
         run: test -z "$(gofmt -l .)"
       - name: Install pinned Python tooling
-        uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: uv@0.12.23
       - name: Format and lint release scripts
