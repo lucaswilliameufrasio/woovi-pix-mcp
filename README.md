@@ -241,7 +241,7 @@ valor `1250` centavos (**R$ 12,50**), com código Pix fictício. Nenhuma chamada
 Woovi ou operação financeira real é feita. Termine o simulador com Ctrl+C.
 
 O simulador também mantém uma assinatura sintética `demo-subscription` em memória
-para validar cancelamento local:
+para validar cancelamento, leitura do snapshot e paginação local:
 
 ```sh
 curl -i -X PUT http://127.0.0.1:8081/api/v1/subscriptions/demo-subscription/cancel \
@@ -249,10 +249,19 @@ curl -i -X PUT http://127.0.0.1:8081/api/v1/subscriptions/demo-subscription/canc
 
 curl -sS http://127.0.0.1:8081/api/v1/subscriptions/demo-subscription \
   -H 'Authorization: simulator'
+
+curl -sS 'http://127.0.0.1:8081/api/v1/subscriptions/demo-subscription/installments?skip=0&limit=1' \
+  -H 'Authorization: simulator'
+
+curl -sS 'http://127.0.0.1:8081/api/v1/subscriptions/demo-subscription/installments?skip=1&limit=1' \
+  -H 'Authorization: simulator'
 ```
 
 O primeiro comando retorna `204`; o segundo mostra `status: CANCELED`. O estado
 é sintético, vive apenas na memória do processo e volta a `APPROVED` após restart.
+O GET da assinatura devolve somente IDs e estado fictícios; os GETs de parcelas
+aceitam `skip` e `limit` de 1 a 100 e retornam `pageInfo`. A primeira página
+inclui uma parcela `COMPLETED`, a segunda uma `SCHEDULED`.
 Esse endpoint existe para exercitar adapters locais, não é ferramenta MCP, não
 cria uma recorrência Woovi e não chama nem cancela uma assinatura real.
 

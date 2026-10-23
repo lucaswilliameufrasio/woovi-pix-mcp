@@ -17,8 +17,20 @@ type Simulator struct {
 }
 
 type simulatedSubscription struct {
-	GlobalID string
-	Status   string
+	GlobalID        string
+	CorrelationID   string
+	Status          string
+	RecurringStatus string
+	Installments    []simulatedInstallment
+}
+
+type simulatedInstallment struct {
+	GlobalID           string
+	Status             string
+	InstallmentNumber  int
+	Value              int64
+	DateGenerateCharge string
+	ChargeID           string
 }
 
 func NewSimulator() *Simulator {
@@ -27,7 +39,29 @@ func NewSimulator() *Simulator {
 			"demo-charge": {ID: "demo-charge", Reference: "demo-order-001", Status: "ACTIVE", AmountCents: 1250, Currency: "BRL", PixCode: "000201-DEMO-PIX-COPY-CODE"},
 		},
 		subscriptions: map[string]simulatedSubscription{
-			"demo-subscription": {GlobalID: "demo-subscription", Status: "APPROVED"},
+			"demo-subscription": {
+				GlobalID:        "demo-subscription",
+				CorrelationID:   "demo-subscription-correlation",
+				Status:          "APPROVED",
+				RecurringStatus: "APPROVED",
+				Installments: []simulatedInstallment{
+					{
+						GlobalID:           "demo-installment-001",
+						Status:             "COMPLETED",
+						InstallmentNumber:  1,
+						Value:              1_250,
+						DateGenerateCharge: "2026-01-01T00:00:00Z",
+						ChargeID:           "demo-charge-001",
+					},
+					{
+						GlobalID:           "demo-installment-002",
+						Status:             "SCHEDULED",
+						InstallmentNumber:  2,
+						Value:              1_250,
+						DateGenerateCharge: "2026-02-01T00:00:00Z",
+					},
+				},
+			},
 		},
 	}
 }
@@ -92,7 +126,15 @@ func (s *Simulator) serveSubscription(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodGet {
+		if strings.HasSuffix(resource, "/installments") {
+			id := strings.TrimSuffix(resource, "/installments")
+			s.getInstallments(w, r, id)
+
+			return
+		}
+
 		s.getSubscription(w, resource)
+
 		return
 	}
 
@@ -110,6 +152,7 @@ func (s *Simulator) cancelSubscription(w http.ResponseWriter, id string) {
 	}
 
 	subscription.Status = "CANCELED"
+	subscription.RecurringStatus = "CANCELED"
 	s.subscriptions[id] = subscription
 
 	w.WriteHeader(http.StatusNoContent)
@@ -126,10 +169,69 @@ func (s *Simulator) getSubscription(w http.ResponseWriter, id string) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"subscription": map[string]string{
-		"globalID": subscription.GlobalID,
-		"status":   subscription.Status,
+	_ = json.NewEncoder(w).Encode(map[string]any{"subscription": map[string]any{
+		"globalID":      subscription.GlobalID,
+		"correlationID": subscription.CorrelationID,
+		"status":        subscription.Status,
+		"pixRecurring": map[string]string{
+			"status": subscription.RecurringStatus,
+		},
 	}})
+}
+
+func (s *Simulator) getInstallments(w http.ResponseWriter, r *http.Request, id string) {
+	query := r.URL.Query()
+
+	skip, err := strconv.Atoi(query.Get("skip"))
+	if err != nil || skip < 0 {
+		http.Error(w, `{"error":"invalid pagination"}`, http.StatusBadRequest)
+		return
+	}
+
+	limit, err := strconv.Atoi(query.Get("limit"))
+	if err != nil || limit < 1 || limit > 100 {
+		http.Error(w, `{"error":"invalid pagination"}`, http.StatusBadRequest)
+		return
+	}
+
+	s.mu.RLock()
+	subscription, ok := s.subscriptions[id]
+	s.mu.RUnlock()
+
+	if !ok {
+		http.Error(w, `{"error":"subscription not found"}`, http.StatusNotFound)
+		return
+	}
+
+	start := min(skip, len(subscription.Installments))
+	end := min(start+limit, len(subscription.Installments))
+	rows := make([]map[string]any, 0, end-start)
+
+	for _, installment := range subscription.Installments[start:end] {
+		row := map[string]any{
+			"globalID":           installment.GlobalID,
+			"status":             installment.Status,
+			"installmentNumber":  installment.InstallmentNumber,
+			"value":              installment.Value,
+			"dateGenerateCharge": installment.DateGenerateCharge,
+		}
+
+		if installment.ChargeID != "" {
+			row["cobr"] = map[string]string{"identifierId": installment.ChargeID}
+		}
+
+		rows = append(rows, row)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"installments": rows,
+		"pageInfo": map[string]any{
+			"skip":        skip,
+			"limit":       limit,
+			"hasNextPage": end < len(subscription.Installments),
+		},
+	})
 }
 
 func (s *Simulator) createCharge(w http.ResponseWriter, r *http.Request) {
