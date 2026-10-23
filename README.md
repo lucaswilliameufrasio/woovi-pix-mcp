@@ -4,7 +4,7 @@ Servidor MCP local em Go para consultar e, opcionalmente, criar cobranças Pix
 Woovi. A ferramenta `pix_create_charge` fica desativada por padrão. Não há Pix
 Out, transferências, reembolsos ou cancelamentos financeiros.
 
-Stack: Go 1.27.1, MCP Go SDK v1.8.0, SQLite embutido e Goose v3 para migrações
+Stack: Go 1.27.3, MCP Go SDK v1.8.0, SQLite embutido e Goose v3 para migrações
 SQL. Quando escrita está habilitada, o servidor cria o banco privado e aplica
 as migrações ao iniciar. Não requer PostgreSQL nem Docker.
 
@@ -166,13 +166,13 @@ Não há DATABASE_URL nem importação PostgreSQL; esse MCP não teve usuários 
 
 ## Teste rápido local — sem chamar a Woovi
 
-Execute os comandos na raiz deste repositório, com Go 1.27.1 instalado. Este
+Execute os comandos na raiz deste repositório, com Go 1.27.3 instalado. Este
 roteiro usa somente dados fictícios e não precisa de conta Woovi ou Docker.
 
 ### 1. Terminal 1: subir o simulador
 
 ```sh
-go run ./cmd/woovi-simulator
+mise exec go@1.27.3 -- go run ./cmd/woovi-simulator
 ```
 
 Deixe esse terminal aberto. O simulador escuta em `127.0.0.1:8081`.
@@ -240,9 +240,25 @@ Reabra o OpenCode para carregar o servidor `woovi-pix-teste` e peça:
 valor `1250` centavos (**R$ 12,50**), com código Pix fictício. Nenhuma chamada
 Woovi ou operação financeira real é feita. Termine o simulador com Ctrl+C.
 
-**O simulador manual só suporta consulta.** Criação/idempotência são exercitadas
-pelo simulador específico dos testes automatizados, não por esse comando.
-Para rodar a suíte e as verificações do projeto:
+O simulador também mantém uma assinatura sintética `demo-subscription` em memória
+para validar cancelamento local:
+
+```sh
+curl -i -X PUT http://127.0.0.1:8081/api/v1/subscriptions/demo-subscription/cancel \
+  -H 'Authorization: simulator'
+
+curl -sS http://127.0.0.1:8081/api/v1/subscriptions/demo-subscription \
+  -H 'Authorization: simulator'
+```
+
+O primeiro comando retorna `204`; o segundo mostra `status: CANCELED`. O estado
+é sintético, vive apenas na memória do processo e volta a `APPROVED` após restart.
+Esse endpoint existe para exercitar adapters locais, não é ferramenta MCP, não
+cria uma recorrência Woovi e não chama nem cancela uma assinatura real.
+
+O simulador manual de cobrança também aceita consulta/criação em memória; criação
+e idempotência são cobertas adicionalmente pelos testes automatizados. Para rodar
+a suíte e as verificações do projeto:
 
 ```sh
 make check
