@@ -15,7 +15,9 @@ import (
 )
 
 func TestDoctorUsesProfileWithoutLeakingCredential(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	t.Setenv("XDG_CONFIG_HOME", root)
 
 	s, err := config.Default()
 	if err != nil {
@@ -34,6 +36,37 @@ func TestDoctorUsesProfileWithoutLeakingCredential(t *testing.T) {
 
 	if strings.Contains(out.String(), "SECRET-DO-NOT-PRINT") || !strings.Contains(out.String(), "No provider request") {
 		t.Fatalf("unsafe doctor: %s", out.String())
+	}
+}
+
+func TestClaudeSessionStartHookEmitsAccurateChargeSafetyReminder(t *testing.T) {
+	var output bytes.Buffer
+
+	err := cli(context.Background(), []string{"hook", "session-start"}, strings.NewReader(""), &output, log.New(io.Discard, "", 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(output.String(), "pix_create_charge") || !strings.Contains(output.String(), "guidance, not enforcement") {
+		t.Fatalf("unexpected Claude hook response: %s", output.String())
+	}
+}
+
+func TestClientRegistrationRejectsEphemeralGoRunBinary(t *testing.T) {
+	root := t.TempDir()
+
+	transientDirectory := filepath.Join(root, "go-build123", "b001", "exe")
+	if err := os.MkdirAll(transientDirectory, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	executable := filepath.Join(transientDirectory, "woovi-pix-mcp")
+	if err := os.WriteFile(executable, []byte("binary"), 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := persistentExecutable(executable); err == nil || !strings.Contains(err.Error(), "persistent binary") {
+		t.Fatalf("ephemeral go run path was accepted: %v", err)
 	}
 }
 
@@ -79,5 +112,29 @@ func TestCLIVersionDoesNotRequireCredentials(t *testing.T) {
 		if want := "woovi-pix-mcp " + buildinfo.Version + " (commit " + buildinfo.Commit + ")\n"; out.String() != want {
 			t.Fatalf("version %q != %q", out.String(), want)
 		}
+	}
+}
+
+func TestUnconfiguredDefaultCommandExplainsInteractiveSetup(t *testing.T) {
+	for _, scenario := range []struct {
+		name   string
+		values map[string]string
+	}{
+		{name: "no environment values", values: map[string]string{}},
+		{name: "partial environment values", values: map[string]string{"WOOVI_API_BASE_URL": "https://api.woovi.com"}},
+		{name: "only credential environment value", values: map[string]string{"WOOVI_APP_ID": "test-app-id"}},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("HOME", root)
+			t.Setenv("XDG_CONFIG_HOME", root)
+
+			getenv := func(key string) string { return scenario.values[key] }
+
+			err := defaultCommand(context.Background(), getenv, strings.NewReader(""), io.Discard, log.New(io.Discard, "", 0), false)
+			if err == nil || !strings.Contains(err.Error(), "setup --profile sandbox") || !strings.Contains(err.Error(), "stdio --profile sandbox") {
+				t.Fatalf("expected actionable setup guidance, got %v", err)
+			}
+		})
 	}
 }

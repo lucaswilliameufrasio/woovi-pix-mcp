@@ -4,15 +4,20 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
+	"strings"
 
 	"github.com/gofrs/flock"
+	"github.com/pelletier/go-toml/v2"
 )
 
-// InstallMCP edits an explicitly selected JSON client configuration. JSONC is
-// rejected rather than losing comments; callers can use the printed snippet.
-// An existing entry is only accepted when it already equals our registration.
+// InstallMCP edits an explicitly selected JSON client configuration or Codex
+// TOML configuration. JSONC is rejected rather than losing comments; callers
+// can use the printed registration details. Conflicting entries are not replaced.
 func InstallMCP(path, client, binary, profile string, apply bool) (bool, error) {
 	if !validName.MatchString(profile) {
 		return false, errors.New("invalid profile name")
@@ -31,11 +36,15 @@ func InstallMCP(path, client, binary, profile string, apply bool) (bool, error) 
 	if err != nil {
 		return false, err
 	}
+
+	if client == "codex" {
+		return installCodexMCP(path, binary, profile, apply)
+	}
 	// Do not create directories or files during a preview.
 	var guard *flock.Flock
 
 	if apply {
-		if err := privateDir(filepath.Dir(path)); err != nil {
+		if err := clientConfigDir(filepath.Dir(path)); err != nil {
 			return false, err
 		}
 
@@ -151,13 +160,126 @@ func MCPEntry(client, binary, profile string) (json.RawMessage, error) {
 	var value any
 
 	switch client {
-	case "claude", "cursor":
+	case "claude", "cursor", "gemini":
 		value = map[string]any{"command": binary, "args": []string{"stdio", "--profile", profile}}
 	case "opencode":
 		value = map[string]any{"type": "local", "command": []string{binary, "stdio", "--profile", profile}}
+	case "codex":
+		value = map[string]any{"command": binary, "args": []string{"stdio", "--profile", profile}}
 	default:
-		return nil, errors.New("client must be claude, cursor or opencode (V2)")
+		return nil, errors.New("client must be claude, cursor, opencode, codex or gemini")
 	}
 
 	return json.Marshal(value)
+}
+
+func installCodexMCP(path, binary, profile string, apply bool) (bool, error) {
+	var guard *flock.Flock
+
+	if apply {
+		if err := clientConfigDir(filepath.Dir(path)); err != nil {
+			return false, err
+		}
+
+		guard = flock.New(path+".lock", flock.SetPermissions(0600))
+		if err := guard.Lock(); err != nil {
+			return false, errors.New("unable to lock client configuration")
+		}
+
+		defer func() { _ = guard.Unlock() }()
+	}
+
+	original, err := readPrivate(path)
+	if err != nil {
+		if _, statErr := os.Lstat(path); !errors.Is(statErr, os.ErrNotExist) {
+			return false, err
+		}
+
+		original = nil
+	}
+
+	decoded := map[string]any{}
+	if len(original) > 0 {
+		if err := toml.Unmarshal(original, &decoded); err != nil {
+			return false, errors.New("codex configuration must be valid TOML")
+		}
+	}
+
+	servers, err := tomlTable(decoded, "mcp_servers")
+	if err != nil {
+		return false, err
+	}
+
+	entryName := "woovi-pix-" + profile
+	expected := map[string]any{"command": binary, "args": []any{"stdio", "--profile", profile}}
+
+	if existing, exists := servers[entryName]; exists {
+		entry, ok := existing.(map[string]any)
+		if ok && reflect.DeepEqual(entry, expected) {
+			return false, nil
+		}
+
+		return false, errors.New("codex registration exists with different settings; no overwrite performed")
+	}
+
+	addition := fmt.Sprintf("\n[mcp_servers.%s]\ncommand = %s\nargs = [\"stdio\", \"--profile\", %s]\n", entryName, codexTOMLString(binary), codexTOMLString(profile))
+
+	updated := append(append([]byte(nil), original...), []byte(addition)...)
+	if len(original) == 0 {
+		updated = []byte(strings.TrimPrefix(addition, "\n"))
+	}
+
+	if !apply {
+		return true, nil
+	}
+
+	if len(original) > 0 {
+		backup, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".backup-*")
+		if err != nil {
+			return false, errors.New("unable to create client backup")
+		}
+
+		_, writeErr := backup.Write(original)
+		syncErr := backup.Sync()
+
+		closeErr := backup.Close()
+		if writeErr != nil || syncErr != nil || closeErr != nil {
+			return false, errors.New("unable to persist client backup")
+		}
+	}
+
+	if err := writePrivate(path, updated); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+func tomlTable(root map[string]any, key string) (map[string]any, error) {
+	if value, exists := root[key]; exists {
+		if table, ok := value.(map[string]any); ok {
+			return table, nil
+		}
+
+		return nil, fmt.Errorf("codex `%s` setting must be a TOML table", key)
+	}
+
+	return map[string]any{}, nil
+}
+
+func codexTOMLString(value string) string {
+	return strconv.Quote(value)
+}
+
+func clientConfigDir(path string) error {
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return errors.New("unable to create client configuration directory")
+	}
+
+	info, err := os.Lstat(path)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0022 != 0 {
+		return errors.New("client configuration directory must not be writable by other users or be a symlink")
+	}
+
+	return nil
 }

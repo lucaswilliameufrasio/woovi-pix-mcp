@@ -29,8 +29,11 @@ go build -o ./bin/woovi-pix-mcp ./cmd/woovi-pix-mcp
 ./bin/woovi-pix-mcp doctor --profile sandbox
 ```
 
-O assistente pede ambiente, identificador estável da conta e opt-in de criação.
-O AppID é digitado sem eco e salvo no cofre de credenciais do sistema. Se o
+O assistente interativo permite selecionar entre sandbox
+(`https://api.woovi-sandbox.com`), produção (`https://api.woovi.com`) e o
+simulador local (`http://127.0.0.1:8081`), informa o identificador estável da
+conta e mantém criação de cobranças desativada por padrão. O AppID é digitado
+mascarado e salvo no cofre de credenciais do sistema. Se o
 cofre não estiver disponível, o setup falha: não há fallback silencioso. Use
 `setup --profile sandbox --secret-file` somente se aceitar guardar o segredo
 sem criptografia em arquivo restrito ao usuário. Permissões POSIX são validadas;
@@ -72,22 +75,30 @@ O identificador de conta precisa ser estável e corresponder à conta do AppID:
 o servidor não consegue verificar isso offline. Dois perfis da mesma conta e
 ambiente compartilham o histórico de idempotência, inclusive após trocar AppID.
 
+Ao executar `woovi-pix-mcp` sem argumentos pela primeira vez em um terminal,
+sem as duas variáveis legadas completas, o CLI abre o assistente Bubble Tea para
+criar o perfil `sandbox`: use ↑/↓ para escolher o ambiente, Enter para avançar
+e Esc para cancelar. Depois de salvar, ele mostra os comandos para validar e
+conectar o cliente. Se já houver perfis, use `profiles` para escolher
+explicitamente; o perfil `sandbox` é iniciado automaticamente quando existir e
+nenhum par completo de variáveis de ambiente estiver configurado. Sem terminal,
+o CLI não solicita segredos: mostra como executar `setup` interativamente.
+
 ## Instalar no cliente MCP
 
-Selecione explicitamente cliente e arquivo. O padrão só valida a alteração;
-`--apply` salva com backup privado, preservando entradas alheias. Exemplo:
+Sem `--client`, o CLI abre um seletor Bubble Tea com cinco clientes. O arquivo
+do projeto atual é sugerido; preview é o padrão e `--apply` salva com backup,
+preservando entradas alheias. Exemplo:
 
 ```sh
 ./bin/woovi-pix-mcp install-mcp --profile sandbox --client opencode --config ~/.config/opencode/opencode.json
 ./bin/woovi-pix-mcp install-mcp --profile sandbox --client opencode --config ~/.config/opencode/opencode.json --apply
 ```
 
-Clientes aceitos: `opencode` **V2** (`mcp.servers`), `claude` e `cursor`
-(`mcpServers`). O caminho é sempre explícito: não há descoberta ou edição
-automática de todos os clientes. JSONC, arquivos públicos ou symlinks são
-recusados; revise permissões antes de aplicar (diretório 0700, arquivo 0600).
-Uma entrada diferente com o mesmo nome não é sobrescrita. Uma entrada idêntica
-não gera nova alteração/backup. Codex/TOML deve ser configurado manualmente.
+Suporta OpenCode **V2**, Claude Code, Cursor, Codex CLI e Gemini CLI. JSONC,
+arquivos de configuração não privados ou symlinks são recusados; uma entrada
+diferente com o mesmo nome não é sobrescrita. Codex TOML recebe a entrada ao
+final para preservar comentários e tabelas existentes.
 
 ## Comandos de desenvolvimento
 
@@ -131,8 +142,12 @@ Para compilar um binário local sem instalá-lo globalmente:
 go build -o ./bin/woovi-pix-mcp ./cmd/woovi-pix-mcp
 ```
 
-Execute o binário com `stdio --profile sandbox`. O diretório
-`bin/` é apenas uma saída local e não deve ser versionado.
+Execute o binário com `stdio --profile sandbox` para iniciar o servidor. Sem
+argumentos, a primeira execução em um terminal orienta a configuração. Se já
+houver um perfil `sandbox`, o comando sem argumentos inicia esse perfil; se
+houver apenas perfis com outros nomes, o CLI abre um seletor interativo. Em
+execuções sem terminal, escolha explicitamente com `stdio --profile NAME`. O
+diretório `bin/` é apenas uma saída local e não deve ser versionado.
 
 O AppID fica no processo servidor e nunca é um argumento ou resultado MCP. Logs
 operacionais vão para stderr; stdout fica reservado ao protocolo stdio. O host
@@ -212,22 +227,42 @@ em modo somente leitura. `doctor` não consulta nem mesmo o simulador.
 
 ### 4. Conectar ao OpenCode V2
 
-Primeiro valide a alteração (preview), depois aplique:
+Para configurar um cliente no projeto atual, execute o seletor interativo:
 
 ```sh
-./bin/woovi-pix-mcp install-mcp --profile teste \
-  --client opencode --config ~/.config/opencode/opencode.json
-
-./bin/woovi-pix-mcp install-mcp --profile teste \
-  --client opencode --config ~/.config/opencode/opencode.json --apply
+./bin/woovi-pix-mcp install-mcp --profile teste
 ```
 
-Use o caminho do arquivo realmente usado pelo seu cliente. Precisa ser JSON,
-não JSONC; diretório 0700 e arquivo 0600, sem symlinks. Se o instalador recusar,
-revise o motivo antes de alterar permissões ou use configuração manual. Para
-Claude/Cursor, selecione `--client claude`/`--client cursor` e o respectivo arquivo.
-`examples/mcp-client.json` ilustra a configuração manual: binário e perfil,
-**nunca AppID**. O binário precisa permanecer no caminho usado na instalação.
+Ele oferece OpenCode, Claude Code, Cursor, Codex CLI e Gemini CLI, usando os
+arquivos de configuração **do projeto atual** por padrão. O primeiro comando
+faz preview; revise e repita com `--apply` para gravar. Também é possível
+escolher cliente e arquivo explicitamente:
+
+```sh
+./bin/woovi-pix-mcp install-mcp --profile teste --client opencode --config opencode.json
+./bin/woovi-pix-mcp install-mcp --profile teste --client opencode --config opencode.json --apply
+```
+
+Os caminhos padrão são `opencode.json`, `.mcp.json`, `.cursor/mcp.json`,
+`.codex/config.toml` e `.gemini/settings.json`, respectivamente. JSONC não é
+reescrito; TOML do Codex recebe a entrada ao final do arquivo. O instalador faz
+backup antes de aplicar e recusa sobrescrever uma entrada Woovi conflitante.
+Ele registra somente binário e perfil, **nunca AppID**; mantenha o binário no
+caminho usado na instalação.
+
+Instale também o skill e os avisos de segurança específicos dos hosts suportados
+no projeto atual. Revise o preview antes de aplicar:
+
+```sh
+./bin/woovi-pix-mcp install-agent-assets
+./bin/woovi-pix-mcp install-agent-assets --apply
+```
+
+Isso instala o skill em `.agents/skills/` e `.claude/skills/`, o hook
+`SessionStart` do Claude Code e um plugin do OpenCode que acrescenta o aviso ao
+contexto de cada chamada. O aviso não bloqueia ferramentas nem substitui
+autorização; `pix_create_charge` é uma operação de escrita opcional. Nenhuma
+configuração global dos clientes é alterada.
 
 ### 5. Consultar a cobrança fictícia
 

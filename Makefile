@@ -16,7 +16,7 @@ help: ## Show available targets
 test-litestream: ## Full tests with real Litestream and disposable S3-compatible storage (TEST_LITESTREAM_BINARY=...)
 	bash scripts/test-litestream.sh
 
-run: ## Run the stdio MCP server (requires Woovi environment variables)
+run: ## Start MCP stdio or guide first-time setup when no profile exists
 	go run ./cmd/woovi-pix-mcp
 
 simulator: ## Run the local HTTP Woovi simulator

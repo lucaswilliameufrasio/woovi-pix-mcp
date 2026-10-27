@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestInstallPreservesBacksUpAndIsIdempotent(t *testing.T) {
-	for _, client := range []string{"claude", "cursor", "opencode"} {
+	for _, client := range []string{"claude", "cursor", "opencode", "gemini"} {
 		t.Run(client, func(t *testing.T) {
 			dir := t.TempDir()
 			if err := os.Chmod(dir, 0700); err != nil {
@@ -85,6 +86,68 @@ func TestInstallPreservesBacksUpAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestCodexInstallPreservesTOMLAndRefusesConflictingEntry(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	binaryPath := filepath.Join(directory, "woovi binary")
+	if err := os.WriteFile(binaryPath, []byte("binary"), 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	configPath := filepath.Join(directory, "config.toml")
+
+	original := "# Keep this comment\nmodel = \"gpt-5\"\n\n[mcp_servers.other]\ncommand = \"other\"\nargs = []\n"
+	if err := os.WriteFile(configPath, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	changed, err := InstallMCP(configPath, "codex", binaryPath, "sandbox", false)
+	if err != nil || !changed {
+		t.Fatalf("preview changed=%t err=%v", changed, err)
+	}
+
+	preview, err := os.ReadFile(configPath)
+	if err != nil || string(preview) != original {
+		t.Fatal("Codex preview modified configuration")
+	}
+
+	changed, err = InstallMCP(configPath, "codex", binaryPath, "sandbox", true)
+	if err != nil || !changed {
+		t.Fatalf("apply changed=%t err=%v", changed, err)
+	}
+
+	updated, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.HasPrefix(updated, []byte(original)) || !bytes.Contains(updated, []byte("[mcp_servers.woovi-pix-sandbox]")) {
+		t.Fatalf("Codex config did not preserve original and append registration: %s", updated)
+	}
+
+	changed, err = InstallMCP(configPath, "codex", binaryPath, "sandbox", true)
+	if err != nil || changed {
+		t.Fatalf("idempotent apply changed=%t err=%v", changed, err)
+	}
+
+	conflicting := strings.Replace(string(updated), "woovi binary", "other-binary", 1)
+	if err := os.WriteFile(configPath, []byte(conflicting), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := InstallMCP(configPath, "codex", binaryPath, "sandbox", true); err == nil {
+		t.Fatal("conflicting Codex registration was overwritten")
+	}
+
+	actual, err := os.ReadFile(configPath)
+	if err != nil || string(actual) != conflicting {
+		t.Fatal("conflicting Codex registration changed configuration")
+	}
+}
+
 func TestInstallRejectsUnsafeOrInvalidConfiguration(t *testing.T) {
 	dir := t.TempDir()
 
@@ -110,5 +173,38 @@ func TestInstallRejectsUnsafeOrInvalidConfiguration(t *testing.T) {
 
 	if _, err := InstallMCP(path, "claude", binary, "test", true); err == nil {
 		t.Fatal("accepted public configuration")
+	}
+}
+
+func TestProjectClientConfigCanUseAnExistingSharedReadOnlyDirectory(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	configDirectory := filepath.Join(projectRoot, ".cursor")
+	if err := os.Mkdir(configDirectory, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	binary := filepath.Join(projectRoot, "woovi-pix-mcp")
+	if err := os.WriteFile(binary, []byte("binary"), 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	configPath := filepath.Join(configDirectory, "mcp.json")
+	if changed, err := InstallMCP(configPath, "cursor", binary, "sandbox", true); err != nil || !changed {
+		t.Fatalf("install changed=%t err=%v", changed, err)
+	}
+
+	info, err := os.Stat(configDirectory)
+	if err != nil || info.Mode().Perm() != 0755 {
+		t.Fatalf("installer unexpectedly changed project directory permissions: %v", err)
+	}
+
+	configInfo, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if configInfo.Mode().Perm() != 0600 {
+		t.Fatalf("client config permissions = %v", configInfo.Mode().Perm())
 	}
 }
