@@ -40,7 +40,7 @@ jobs:
           version="$(python3 scripts/release.py next "$RAW_VERSION")"
           echo "value=$version" >> "$GITHUB_OUTPUT"
       - name: Install pinned git-cliff
-        uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: git-cliff@2.14.2
       - name: Create or resume release pull request
